@@ -2,27 +2,44 @@
 # v1.0.0, 10/27/2022
 
 # Modified from GenerateCNNInputs.py v1.1.0, GenerateFFTFeatures.py v5.0.0
-# TODO: composite and individual mode
-# TODO: output both feature matrix with composite features and individual profiles (a la CNNInputs)
-# TODO: add additional plotting utils to be called directly
 # TODO: probabilistic nucleosome positioning (area of 1 per read)
 # TODO: print "fingerprint" and see if any natural patterns arise
-# TODO: output full fragment profile (including distribution)
-# TODO: each "site" should output a coverage profile (numpy array), fragment profile (<), dictionary of features
-# TODO: add length by-pass, e.g. don't output coverage profile for long locs
 
-# Current output structure:
+# TODO: if window specified, require and use position field (composite or non) and output profiles, else no profile
+
+# TODO:
+# Output structure (region-level features as a dictionary, region-level profiles as a single numpy matrix):
 # ----------------------------------------------------------------------------------------------------------------------
-# 1: GC-corrected depth
-# 2: (nucleosome) phased profile
-# 3: Shannon entropy
-# 4: Region fragment profile normalized Shannon entropy
-# 5: Fragment heterogeneity (unique fragment lengths / total fragments)
-# 6: Short:long ratio (x <= 120 / 140 <= x <= 250)
-# 7: Adenine - one hot encoded
-# 8: Cytosine - one hot encoded
-# 9: Guanine - one hot encoded
-# 10: Tyrosine - one hot encoded
+# ### Region-level features (fragmentation):
+# 1: frag-mean: mean fragment length
+# 2: frag-std: fragment lengths' standard deviation
+# 3: frag-ratio: fragments' short:long ratio (x <= 120 / 140 <= x <= 250)
+# 4: frag-ent: fragment lengths' Shannon entropy, normalized by Dirichlet expected profile in the same region
+# ### Region-level features (phasing):
+# 5: np-score: Nucleosome Phasing score
+# 6: np-period: phased-nucleosome periodicity
+# ### Region-level features (profile-based):
+# 7: mean-depth: mean depth in the region (GC-corrected, if provided)
+# 8: cd-shoulder: central dip/peak value as a fraction of the mean value at the predicted +/-1 nucleosomes
+# 9: cd-mean: central dip/peak value as a fraction of the mean depth in the region
+# 10: flank-diff: height of +1 nucleosome / height of -1 nucleosome
+# 11: plus-one-loc: location relative to position of plus-one nucleosome
+# 12: minus-one-loc: location relative to position of minus-one nucleosome
+# ### Region-level profiles (all un-normalized, nt-resolution):
+# 1: GC-corrected (if provided by Griffin) depth
+# 2: Nucleosome-level phased profile
+# 3: Nucleosome center profile
+# 4: Mean fragment size
+# 4: Fragment size Shannon entropy
+# 5: Region fragment profile normalized Shannon entropy
+# 6: Fragment heterogeneity (unique fragment lengths / total fragments)
+# 7: Fragment MAD (Mean Absolute Deviation)
+# 8: Short:long ratio (x <= 120 / 140 <= x <= 250)
+# 9: A (Adenine) frequency
+# 10: C (Cytosine) frequency
+# 11: G (Guanine) frequency
+# 12: T (Tyrosine) frequency
+# peak locations
 # ----------------------------------------------------------------------------------------------------------------------
 # Inputs are BAM of interest (sample), associated GC_bias, a BED file with equal-sized regions of interest,
 # reference sequence, and optionally a list of regions (corresponding to the names used in the BED file) for which
@@ -37,43 +54,52 @@ import random
 import argparse
 from functools import partial
 from multiprocessing import Pool
-from matplotlib import pyplot as plt
 from scipy.fft import rfft, rfftfreq, irfft
 from triton_helpers import *
 
+# default values
 freq_max = 0.0068493  # theoretical nucleosome period is 146 bp -> f = 0.0068493
-# range_1: T = 150-180 bp (f = 0.00556 - 0.00667)
-# range_2: T = 180-210 bp (f = 0.00476 - 0.00555)
-low_1, high_1 = 0.00556, 0.00667
-low_2, high_2 = 0.00476, 0.00555
+low_1, high_1 = 0.00556, 0.00667  # range_1: T = 150-180 bp (f = 0.00556 - 0.00667)
+low_2, high_2 = 0.00476, 0.00555  # range_2: T = 180-210 bp (f = 0.00476 - 0.00555)
+chr_idx, start_idx, stop_idx, site_idx, strand_idx, pos_idx = 0, 1, 2, 3, 5, 6  # default BED indices
 
 
 def _generate_profile(region, params):
     bam_path, sample, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window = params
-    if region.endswith('.bed'):  # a list of bed files is supplied: perform stacked site analysis
+    if region.endswith('.bed') and window is not None:  # a list of BED files is supplied: perform stacked site analysis
         stack = True
-    else:
+        print('Performing composite site analysis on ')
+    elif region.endswith('.bed'):  # composite sites given but no window; exit
+        stack = True
+        print('ERROR: if a list of BED files for composite analyses is provided, a window length is required.')
+        print('Exiting.')
+        exit()
+    else:  # perform non-composite analysis
         stack = False
     bam = pysam.AlignmentFile(bam_path, 'rb')
     ref_seq = pysam.FastaFile(ref_seq_path)
     roi_fragment_lengths = []
-    if stack:
+    if stack:  # assemble depth and fragment profiles for composite sites ----------------------------------------------
         site = os.path.basename(region).split('.')[0]
         roi_length = window + 1000  # a 500bp buffer is added to smooth FFT boundaries
         depth = [0] * roi_length
-        default_pos = 3  # if 'position' not present in header, use the 4th bed column
+        default_pos = 6  # if 'position' not present in header, use the 4th bed column
+        default_strand = 5  # if 'strand' not present in header, use the 4th bed column
         fragment_length_profile = [[] for _ in range(roi_length)]
         for entry in open(site.strip(), 'r'):  # really a path to each BED file when stacked
             bed_tokens = entry.strip().split('\t')
             if not bed_tokens[1].isdigit():  # header: assign position index and continue
                 default_pos = bed_tokens.index('position')
+                default_strand = bed_tokens.index('strand')
                 continue
             pos = default_pos
+            strand = str(bed_tokens[default_strand])
             center_pos = int(bed_tokens[pos])  # Griffin style "position"
             start_pos = center_pos - (int(window/2) + 500)
             stop_pos = center_pos + (int(window/2) + 500)
             # process all fragments falling inside the ROI
             segment_reads = bam.fetch(bed_tokens[0], start_pos, stop_pos)
+            roi_sequence = ref_seq.fetch(bed_tokens[0], start_pos, stop_pos).upper()
             for read in segment_reads:
                 fragment_length = read.template_length
                 if frag_range[0] <= np.abs(fragment_length) <= frag_range[1] and read.is_paired and read. \
@@ -100,22 +126,37 @@ def _generate_profile(region, params):
                     else:
                         fragment_bias = 1
                     fragment_cov = np.array(range(fragment_start, fragment_end + 1))
-                    for index in [val for val in fragment_cov if 0 <= val < roi_length]:
-                        fragment_length_profile[index].append(abs(fragment_length))
-                        if 0.05 < fragment_bias < 10:
-                            depth[index] += 1 / fragment_bias
-    else:
+                    if strand == '+': # positive strand:
+                        for index in [val for val in fragment_cov if 0 <= val < roi_length]:
+                            fragment_length_profile[index].append(abs(fragment_length))
+                            if 0.05 < fragment_bias < 10:
+                                depth[index] += 1 / fragment_bias
+                    else: # negative strand, flip array before adding TODO: make sure this is right/needed
+                        for index in [val for val in fragment_cov if 0 <= val < roi_length]:
+                            fragment_length_profile[roi_length - index].append(abs(fragment_length))
+                            if 0.05 < fragment_bias < 10:
+                                depth[roi_length - index] += 1 / fragment_bias
+
+    else:  # assemble depth and fragment profiles for sites individually -----------------------------------------------
         bed_tokens = region.strip().split('\t')
-        # a 500bp buffer is added to smooth FFT boundaries
-        start_pos = int(bed_tokens[1]) - 500
-        stop_pos = int(bed_tokens[2]) + 500
+        if window is not None:
+            roi_length = window + 1000  # a 500bp buffer is added to smooth FFT boundaries
+            depth = [0] * roi_length
+            center_pos = int(bed_tokens[pos_index])  # Griffin style "position"
+            start_pos = center_pos - (int(window / 2) + 500)
+            stop_pos = center_pos + (int(window / 2) + 500)
+        else:
+            # a 500bp buffer is added to smooth FFT boundaries
+            start_pos = int(bed_tokens[1]) - 500
+            stop_pos = int(bed_tokens[2]) + 500
+            depth = [0] * (stop_pos - start_pos)
+            roi_length = stop_pos - start_pos
         site = str(bed_tokens[3])
-        depth = [0] * (stop_pos - start_pos)
-        roi_length = len(depth)
+        strand = str(bed_tokens[strand_index])
         # process all fragments falling inside the ROI
         segment_reads = bam.fetch(bed_tokens[0], start_pos, stop_pos)
-        fragment_length_profile = [[] for _ in range(roi_length)]
         roi_sequence = ref_seq.fetch(bed_tokens[0], start_pos, stop_pos).upper()
+        fragment_length_profile = [[] for _ in range(roi_length)]
         for read in segment_reads:
             fragment_length = read.template_length
             if frag_range[0] <= np.abs(fragment_length) <= frag_range[1] and read.is_paired and read.\
@@ -146,6 +187,10 @@ def _generate_profile(region, params):
                     fragment_length_profile[index].append(abs(fragment_length))
                     if 0.05 < fragment_bias < 10:
                         depth[index] += 1 / fragment_bias
+            if strand == "-":
+                roi_sequence = roi_sequence[::-1]
+                depth = depth[::-1]
+                fragment_length_profile = fragment_length_profile[::-1]
     # get phased profile ###############################################################################################
     mean_depth = np.mean(depth[500:-500])
     if mean_depth < 1.0:
@@ -235,6 +280,37 @@ def _generate_profile(region, params):
     out_array = np.concatenate((signal_array, seq_profile), axis=1)
     return (sample + '_' + site), out_array  # identifier, numpy matrix
 
+# ### Region-level features (fragmentation):
+# 1: frag-mean: mean fragment length
+# 2: frag-std: fragment lengths' standard deviation
+# 3: frag-ratio: fragments' short:long ratio (x <= 120 / 140 <= x <= 250)
+# 4: frag-ent: fragment lengths' Shannon entropy, normalized by Dirichlet expected profile in the same region
+# ### Region-level features (phasing):
+# 5: np-score: Nucleosome Phasing score
+# 6: np-period: phased-nucleosome periodicity
+# ### Region-level features (profile-based):
+# 7: mean-depth: mean depth in the region (GC-corrected, if provided)
+# 8: cd-shoulder: central dip/peak value as a fraction of the mean value at the predicted +/-1 nucleosomes
+# 9: cd-mean: central dip/peak value as a fraction of the mean depth in the region
+# 10: flank-diff: height of +1 nucleosome / height of -1 nucleosome
+# 11: plus-one-loc: location relative to position of plus-one nucleosome
+# 12: minus-one-loc: location relative to position of minus-one nucleosome
+# ### Region-level profiles (all un-normalized, nt-resolution):
+# 1: GC-corrected (if provided by Griffin) depth
+# 2: Nucleosome-level phased profile
+# 3: Nucleosome center profile
+# 4: Mean fragment size
+# 4: Fragment size Shannon entropy
+# 5: Region fragment profile normalized Shannon entropy
+# 6: Fragment heterogeneity (unique fragment lengths / total fragments)
+# 7: Fragment MAD (Mean Absolute Deviation)
+# 8: Short:long ratio (x <= 120 / 140 <= x <= 250)
+# 9: A (Adenine) frequency
+# 10: C (Cytosine) frequency
+# 11: G (Guanine) frequency
+# 12: T (Tyrosine) frequency
+# peak locations
+
 
 def main():
     # parse command line arguments:
@@ -249,7 +325,8 @@ def main():
     parser.add_argument('-f', '--size_range', help='fragment size range (bp; default=[15, 500])', nargs=2, type=int,
                         default=(15, 500))
     parser.add_argument('-c', '--cpus', help='number of CPUs to use for parallel processing', type=int, required=True)
-    parser.add_argument('-w', '--window', help='window size (bp) for composite sites', type=int, default=2000)
+    parser.add_argument('-w', '--window', help='window size (bp) for composite sites', type=int, default=None)
+    parser.add_argument('-s', '--composite', help='whether to run in composite-site mode', type=bool, default=False)
     args = parser.parse_args()
 
     print('Loading input files . . .')
@@ -264,6 +341,7 @@ def main():
     size_range = args.size_range
     cpus = args.cpus
     window = args.window
+    stack = args.composite
 
     print('\n### arguments provided:')
     print('\tsample_name = "' + sample_name + '"')
@@ -276,13 +354,39 @@ def main():
     print('\tmap_q =', map_q)
     print('\tCPUs =', cpus)
     print('\twindow =', window)
+    print('\tcomposite = ', stack)
     print('\n')
     sys.stdout.flush()
 
     gc_bias = get_gc_bias_dict(bias_path)
-    sites = [region for region in open(sites_path, 'r')]
+    global chr_idx, start_idx, stop_idx, site_idx, strand_idx, pos_idx
+    if stack and window is None:
+        print('ERROR: if using Triton in composite mode a window (-w) must be specified. Exiting.')
+        exit()
+    elif stack and window is not None:
+        print('Running Triton in composite mode.')
+        sites = [region for region in open(sites_path, 'r')]
+        header =
+    else:
+        print('Running Triton in individual mode.')
+        sites = [region for region in open(sites_path, 'r')]
+        header = sites.pop(0).split('\t')
+    # Below checks for standard BED column names and the position column if window=True, updating their indices
+    # if necessary. If a non-standard header format is used defaults indices will be used, which may error.
+    if 'chrom' in header:
+        chr_idx = header.index('chrom')
+    if 'chromStart' in header:
+        start_idx = header.index('chromStart')
+    if 'chromEnd' in header:
+        stop_idx = header.index('chromEnd')
+    if 'name' in header:
+        site_idx = header.index('name')
+    if 'strand' in header:
+        strand_idx = header.index('strand')
+    if 'position' in header:
+        pos_idx = header.index('position')
     random.shuffle(sites)
-    params = [bam_path, sample_name, results_dir, size_range, gc_bias, ref_seq_path, map_q, window]
+    params = [bam_path, sample_name, results_dir, size_range, gc_bias, ref_seq_path, map_q, window, stack]
 
     print('Running Triton on ' + str(len(sites)) + ' region sets . . .')
 

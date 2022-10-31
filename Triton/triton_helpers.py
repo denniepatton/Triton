@@ -11,11 +11,11 @@ mapping = dict(zip("NACGT", range(5)))  # sequence mapping for one-hot encoding
 
 def one_hot_encode(seq):
     """
-    ???.
+    One-hot encode nucleotide sequence as a binary
         Parameters:
             seq (string): string of nucleotides to one-hot encode
         Returns:
-            numpy array: one-hot encoded nucleotide sequence
+            numpy matrix: one-hot encoded nucleotide sequence
     """
     seq2 = [mapping[nt] for nt in seq]
     return np.eye(5)[seq2]
