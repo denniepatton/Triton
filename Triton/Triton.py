@@ -26,15 +26,15 @@
 # 2: Nucleosome-level phased profile
 # 3: Nucleosome center profile
 # 4: Mean fragment size
-# 4: Fragment size Shannon entropy
-# 5: Region fragment profile normalized Shannon entropy
-# 6: Fragment heterogeneity (unique fragment lengths / total fragments)
-# 7: Fragment MAD (Mean Absolute Deviation)
-# 8: Short:long ratio (x <= 120 / 140 <= x <= 250)
-# 9: A (Adenine) frequency
-# 10: C (Cytosine) frequency
-# 11: G (Guanine) frequency
-# 12: T (Tyrosine) frequency
+# 5: Fragment size Shannon entropy
+# 6: Region fragment profile normalized Shannon entropy
+# 7: Fragment heterogeneity (unique fragment lengths / total fragments)
+# 8: Fragment MAD (Mean Absolute Deviation)
+# 9: Short:long ratio (x <= 120 / 140 <= x <= 250)
+# 10: A (Adenine) frequency
+# 11: C (Cytosine) frequency
+# 12: G (Guanine) frequency
+# 13: T (Tyrosine) frequency
 # * these features are output as np.nan if window == False
 # ----------------------------------------------------------------------------------------------------------------------
 # Inputs are BAM of interest (sample), associated GC_bias, a BED-style file with equal-sized regions of interest,
@@ -68,19 +68,22 @@ def _generate_profile(region, params):
     roi_fragment_lengths = []
     if stack:  # assemble depth and fragment profiles for composite sites ----------------------------------------------
         site = os.path.basename(region).split('.')[0]  # use the file name as the feature name
-        roi_length = window + 1000  # a 500bp buffer is added to smooth FFT boundaries
+        roi_length = window + 1000
         depth = [0] * roi_length
-        nc_signal = depth
+        nc_signal = [0] * roi_length
         fragment_length_profile = [[] for _ in range(roi_length)]
-        oh_seq = np.zeros((5, roi_length))
-        with open(site.strip(), 'r') as sites_file:
+        oh_seq = np.zeros((roi_length, 5))
+        with open(region.strip(), 'r') as sites_file:
             next(sites_file)  # skip header
             for entry in sites_file:  # iterate through regions in this particular BED file
                 bed_tokens = entry.strip().split('\t')
-                chrom, strand, center_pos =\
-                    str(bed_tokens[chr_idx]), str(bed_tokens[strand_idx]), int(bed_tokens[pos_idx])
-                start_pos = center_pos - (int(window/2) + 500)
-                stop_pos = center_pos + (int(window/2) + 500)
+                chrom, center_pos = str(bed_tokens[chr_idx]), int(bed_tokens[pos_idx])
+                if strand_idx is not None:
+                    strand = str(bed_tokens[strand_idx])
+                else:
+                    strand = '+'
+                start_pos = center_pos - int(window/2) - 500
+                stop_pos = center_pos + int(window/2) + 500
                 # process all fragments falling inside the ROI
                 segment_reads = bam.fetch(chrom, start_pos, stop_pos)
                 roi_sequence = ref_seq.fetch(chrom, start_pos, stop_pos).upper()
@@ -111,48 +114,53 @@ def _generate_profile(region, params):
                         else:
                             fragment_bias = 1
                         fragment_cov = np.array(range(fragment_start, fragment_end + 1))
-                        nc_spread = abs(fragment_length) - 147
-                        if nc_spread < 0:
+                        nc_spread = abs(fragment_length) - 146
+                        if nc_spread < 1:
                             nc_cov = None
-                        elif nc_spread == 0:
-                            nc_cov = np.array(fragment_start + 74)
+                        elif nc_spread == 1:
+                            nc_cov = [fragment_start + 74]
                         elif 0 < nc_spread < 147:
                             fragment_midpoint = ceil(abs(fragment_length) / 2)
                             nc_cov = np.array(range(fragment_start + fragment_midpoint - floor(nc_spread/2),
-                                                    fragment_start - fragment_midpoint + floor(nc_spread/2)))
+                                                    fragment_start + fragment_midpoint + floor(nc_spread/2)))
                         else:
                             nc_cov = None
-                        if strand == '+':  # positive strand:
-                            for index in [val for val in fragment_cov if 0 <= val < roi_length]:
-                                fragment_length_profile[index].append(abs(fragment_length))
-                                if 0.05 < fragment_bias < 10:
+                        if 0.05 < fragment_bias < 10:
+                            if strand == '+':  # positive strand:
+                                for index in [val for val in fragment_cov if 0 <= val < roi_length]:
+                                    fragment_length_profile[index].append(abs(fragment_length))
                                     depth[index] += 1 / fragment_bias
-                                    if index in nc_cov:
+                                if nc_cov is not None:
+                                    for index in [val for val in nc_cov if 0 <= val < roi_length]:
                                         nc_signal[index] += 1 / fragment_bias / nc_spread
-                        else:  # negative strand, flip array before adding TODO: make sure this is right/needed
-                            for index in [val for val in fragment_cov if 0 <= val < roi_length]:
-                                fragment_length_profile[roi_length - index].append(abs(fragment_length))
-                                if 0.05 < fragment_bias < 10:
+                            else:  # negative strand, flip array before adding TODO: make sure this is right/needed
+                                for index in [val for val in fragment_cov if 0 <= val < roi_length]:
+                                    fragment_length_profile[roi_length - index].append(abs(fragment_length))
                                     depth[roi_length - index] += 1 / fragment_bias
-                                    if index in nc_cov:
+                                if nc_cov is not None:
+                                    for index in [val for val in nc_cov if 0 <= val < roi_length]:
                                         nc_signal[roi_length - index] += 1 / fragment_bias / nc_spread
-        oh_seq = oh_seq/oh_seq.sum(axis=0, keepdims=True)
+        oh_seq = oh_seq/oh_seq.sum(axis=1, keepdims=True)
     else:  # assemble depth and fragment profiles for sites individually -----------------------------------------------
         bed_tokens = region.strip().split('\t')
-        chrom, strand, site = str(bed_tokens[chr_idx]), str(bed_tokens[strand_idx]), str(bed_tokens[site_idx])
-        if window is not None:
-            roi_length = window + 1000  # a 500bp buffer is added to smooth FFT boundaries
-            depth = [0] * roi_length
-            center_pos = int(bed_tokens[pos_idx])
-            start_pos = center_pos - (int(window / 2) + 500)
-            stop_pos = center_pos + (int(window / 2) + 500)
+        chrom, site = str(bed_tokens[chr_idx]), str(bed_tokens[site_idx])
+        if strand_idx is not None:
+            strand = str(bed_tokens[strand_idx])
         else:
-            # a 500bp buffer is added to smooth FFT boundaries
+            strand = '+'
+        if window is not None:
+            roi_length = window + 1000
+            depth = [0] * roi_length
+            nc_signal = [0] * roi_length
+            center_pos = int(bed_tokens[pos_idx])
+            start_pos = center_pos - int(window / 2) - 500
+            stop_pos = center_pos + int(window / 2) + 500
+        else:
             start_pos = int(bed_tokens[start_idx]) - 500
             stop_pos = int(bed_tokens[stop_idx]) + 500
             depth = [0] * (stop_pos - start_pos)
+            nc_signal = [0] * (stop_pos - start_pos)
             roi_length = stop_pos - start_pos
-        nc_signal = depth
         # process all fragments falling inside the ROI
         segment_reads = bam.fetch(bed_tokens[0], start_pos, stop_pos)
         roi_sequence = ref_seq.fetch(bed_tokens[0], start_pos, stop_pos).upper()
@@ -184,28 +192,42 @@ def _generate_profile(region, params):
                 else:
                     fragment_bias = 1
                 fragment_cov = np.array(range(fragment_start, fragment_end + 1))
-                nc_spread = abs(fragment_length) - 147
-                if nc_spread < 0:
+                nc_spread = abs(fragment_length) - 146
+                if nc_spread < 1:
                     nc_cov = None
-                elif nc_spread == 0:
-                    nc_cov = np.array(fragment_start + 74)
+                elif nc_spread == 1:
+                    nc_cov = [fragment_start + 74]
                 elif 0 < nc_spread < 147:
-                    fragment_midpoint = ceil(abs(fragment_length) / 2)
-                    nc_cov = np.array(range(fragment_start + fragment_midpoint - floor(nc_spread / 2),
-                                            fragment_start - fragment_midpoint + floor(nc_spread / 2)))
+                    fragment_half = abs(fragment_length) / 2
+                    nc_cov = np.array(range(int(fragment_start + fragment_half - (nc_spread / 2)),
+                                            int(fragment_start + fragment_half + (nc_spread / 2)) + 1))
                 else:
                     nc_cov = None
-                for index in [val for val in fragment_cov if 0 <= val < roi_length]:
-                    fragment_length_profile[index].append(abs(fragment_length))
-                    if 0.05 < fragment_bias < 10:
+                if 0.05 < fragment_bias < 10:
+                    for index in [val for val in fragment_cov if 0 <= val < roi_length]:
+                        fragment_length_profile[index].append(abs(fragment_length))
                         depth[index] += 1 / fragment_bias
-                        if index in nc_cov:
+                    if nc_cov is not None:
+                        for index in [val for val in nc_cov if 0 <= val < roi_length]:
                             nc_signal[index] += 1 / fragment_bias / nc_spread
         if strand == "-":
             depth = depth[::-1]
             fragment_length_profile = fragment_length_profile[::-1]
+            nc_signal = nc_signal[::-1]
     # generate phased profile and phasing/region-level features ########################################################
-    mean_depth = np.mean(depth[500:-500])  # only consider depth in the roi
+    mean_depth = np.mean(depth[500:-500])
+    ################### TEST ############################
+    fourier = rfft(np.asarray(nc_signal))
+    freqs = rfftfreq(roi_length)
+    test_freqs = [idx for idx, val in enumerate(freqs) if 0 < val <= freq_max]  # frequencies in filter
+    clean_fft = [0] * (len(fourier) + 1)
+    try:
+        clean_fft[test_freqs[0]:test_freqs[-1]] = fourier[test_freqs[0]:test_freqs[-1]]
+        inverse_signal = irfft(clean_fft, n=roi_length)  # reconstruct signal
+        nc_signal = inverse_signal + len(inverse_signal) * [mean_depth]  # add in base component
+    except IndexError:  # not enough data to construct a reasonable Fourier
+        nc_signal = [0] * roi_length
+    ########
     fourier = rfft(np.asarray(depth))
     freqs = rfftfreq(roi_length)
     range_1 = [idx for idx, val in enumerate(freqs) if low_1 <= val <= high_1]
@@ -217,16 +239,19 @@ def _generate_profile(region, params):
     else:
         np_score = np.nan
     test_freqs = [idx for idx, val in enumerate(freqs) if 0 < val <= freq_max]  # frequencies in filter
-    clean_fft = [0] * len(fourier)
+    clean_fft = [0] * (len(fourier) + 1)
     try:
         clean_fft[test_freqs[0]:test_freqs[-1]] = fourier[test_freqs[0]:test_freqs[-1]]
-        inverse_signal = irfft(clean_fft)  # reconstruct signal
+        inverse_signal = irfft(clean_fft, n=roi_length)  # reconstruct signal
         phased_signal = inverse_signal + len(inverse_signal) * [mean_depth]  # add in base component
     except IndexError:  # not enough data to construct a reasonable Fourier
         phased_signal = [0] * roi_length
-    # Remove the buffer regions:
+    # remove the 500 bp buffer from each side of the signals
     depth = depth[500:-500]
     phased_signal = phased_signal[500:-500]
+    nc_signal = nc_signal[500:-500]
+    fragment_length_profile = fragment_length_profile[500:-500]
+    oh_seq = oh_seq[500:-500]
     max_values, peaks = local_peaks(phased_signal, depth)
     if window is not None:
         inflection = min(phased_signal[int(window/2 - 100):int(window/2 + 100)])  # assume minimum, then double-check
@@ -239,7 +264,7 @@ def _generate_profile(region, params):
         cd_shoulder = ((left_max + right_max) / 2 - inflection) / ((left_max + right_max) / 2)
         cd_mean = ((left_max + right_max) / 2 - inflection) / mean_depth
         flank_diff = right_max / left_max
-        minus_one_loc, plus_one_loc = left_max_loc, right_max_loc
+        minus_one_loc, plus_one_loc = left_max_loc - int(window / 2), right_max_loc - int(window / 2)
     else:
         cd_shoulder, cd_mean, flank_diff, minus_one_loc, plus_one_loc = np.nan, np.nan, np.nan, np.nan, np.nan
     if len(max_values) < 1:
@@ -255,10 +280,10 @@ def _generate_profile(region, params):
     # fragment profiles
     shan_profile, norm_profile = point_entropy(roi_fragment_lengths, fragment_length_profile)
     ratio_profile = [frag_ratio(point_frags) for point_frags in fragment_length_profile]
-    mf_profile = [np.mean(point_frags) for point_frags in fragment_length_profile]
+    mf_profile = [np.mean(point_frags) if len(point_frags) > 0 else np.nan for point_frags in fragment_length_profile]
     mad_profile = [np.median(np.absolute(point_frags - np.median(point_frags)))
                    for point_frags in fragment_length_profile]
-    hetero_profile = [len(set(point_frags)) / len(point_frags) if len(point_frags) is not 0 else 0 for point_frags in
+    hetero_profile = [len(set(point_frags)) / len(point_frags) if len(point_frags) != 0 else 0 for point_frags in
                       fragment_length_profile]
     # sequence profile
     seq_profile = np.delete(oh_seq, 0, 1)  # remove the N row
@@ -325,7 +350,7 @@ def main():
     elif stack and window is not None:
         print('Running Triton in composite mode.')
         sites = [region for region in open(sites_path, 'r')]  # a list of BED-like paths
-        header = [site for site in open(sites[0], 'r')].pop(0).split('\t')  # retrieve one header
+        header = [site for site in open(sites[0].strip(), 'r')].pop(0).split('\t')  # retrieve one header
     else:
         print('Running Triton in individual mode.')
         sites = [region for region in open(sites_path, 'r')]  # a list of regions
@@ -334,24 +359,37 @@ def main():
     # if necessary. If a non-standard header format is used defaults indices will be used, which may error.
     if 'chrom' in header:
         chr_idx = header.index('chrom')
+    elif 'Chrom' in header:
+        chr_idx = header.index('Chrom')
     else:
         print('No "chrom" column found in BED file(s): defaulting to index 0 (' + header[0] + ')')
     if 'chromStart' in header:
         start_idx = header.index('chromStart')
+    elif 'start' in header:
+        start_idx = header.index('start')
+    elif 'Start' in header:
+        start_idx = header.index('Start')
     else:
         print('No "chromStart" column found in BED file(s): defaulting to index 1 (' + header[1] + ')')
     if 'chromEnd' in header:
         stop_idx = header.index('chromEnd')
+    elif 'end' in header:
+        stop_idx = header.index('end')
+    elif 'End' in header:
+        stop_idx = header.index('End')
     else:
         print('No "chromEnd" column found in BED file(s): defaulting to index 2 (' + header[2] + ')')
     if 'name' in header:
         site_idx = header.index('name')
+    elif 'Gene' in header:
+        site_idx = header.index('Gene')
     else:
         print('No "name" column found in BED file(s): defaulting to index 3 (' + header[3] + ')')
     if 'strand' in header:
         strand_idx = header.index('strand')
     else:
-        print('No "strand" column found in BED file(s): defaulting to index 5 (' + header[5] + ')')
+        print('WARNING: No "strand" column found in BED file(s): defaulting to "+" for all sites')
+        strand_idx = None
     if stack and 'position' in header:
         pos_idx = header.index('position')
     elif stack:
@@ -382,11 +420,13 @@ def main():
         fm[sample_name][result[0] + '_plus-one-loc'] = result[12]
         fm[sample_name][result[0] + '_minus-one-loc'] = result[13]
         signal_dict[result[0]] = result[14]
-    df = pd.DataFrame(fm).transpose()
-    out_file = results_dir + '/' + sample_name + '_PhasingFM.tsv'
+    df = pd.DataFrame(fm)
+    out_file = results_dir + '/' + sample_name + '/' + sample_name + '_TritonFeatures.tsv'
     if not os.path.exists(results_dir):
         os.mkdir(results_dir)
-    np.savez_compressed(results_dir + '/' + sample_name, **signal_dict)
+    if not os.path.exists(results_dir + '/' + sample_name):
+        os.mkdir(results_dir + '/' + sample_name)
+    np.savez_compressed(results_dir + '/' + sample_name + '/' + sample_name + '_TritonProfiles', **signal_dict)
     df.to_csv(out_file, sep='\t')
 
     print('Finished')
