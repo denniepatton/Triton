@@ -1,5 +1,5 @@
 # Robert Patton, rpatton@fredhutch.org
-# v1.0.0, 10/27/2022
+# v1.0.0, 11/15/2022
 
 # helper functions called by Triton.py
 
@@ -11,11 +11,11 @@ mapping = dict(zip("NACGT", range(5)))  # sequence mapping for one-hot encoding
 
 def one_hot_encode(seq):
     """
-    One-hot encode nucleotide sequence as a binary
+    One-hot encode a nucleotide sequence (as a binary numpy array)
         Parameters:
             seq (string): string of nucleotides to one-hot encode
         Returns:
-            numpy matrix: one-hot encoded nucleotide sequence
+            numpy array: one-hot encoded nucleotide sequence of size 5xN
     """
     seq2 = [mapping[nt] for nt in seq]
     return np.eye(5)[seq2]
@@ -109,11 +109,21 @@ def nearest_peaks(ref_point, ref_list):
     if len([i for i in distances if i > 0]) > 0:
         left_index = ref_point - min([i for i in distances if i > 0])
     else:
-        left_index = ref_point - 100
+        left_index = np.nan
     if len([abs(i) for i in distances if i < 0]) > 0:
         right_index = ref_point + min([abs(i) for i in distances if i < 0])
     else:
-        right_index = ref_point + 100
+        right_index = np.nan
+    return left_index, right_index
+
+
+def nearest_troughs(ref_point, signal):
+    left_index = ref_point - 1
+    while signal[left_index] < signal[left_index + 1]:
+        left_index -= 1
+    right_index = ref_point + 1
+    while signal[right_index] < signal[right_index - 1]:
+        right_index += 1
     return left_index, right_index
 
 

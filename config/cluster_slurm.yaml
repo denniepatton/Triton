@@ -1,0 +1,19 @@
+# cluster_slurm.yaml for Triton.snakefile
+# Robert Patton, rpatton@fredhutch.org (Ha Lab)
+# v1.0
+
+__default__:
+    partition: campus-new
+    time: "24:0:0"
+    mem: 4G
+    ncpus: 1
+    ntasks: 1
+    output: logs/cluster/{rule}.%A.out
+    JobName: "{rule}"
+
+triton_main:
+    partition: campus-new
+    mem: 32G # defaults to 4xncpus
+    ncpus: 8 # number of cores to process each bed file
+    output: logs/cluster/{rule}.{wildcards.samples}.%A.out
+    JobName: "{rule}.{wildcards.samples}"

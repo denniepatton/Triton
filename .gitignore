@@ -130,3 +130,6 @@ dmypy.json
 
 # Mac Crap
 .DS_Store
+
+# snakemake stuff
+.snakemake

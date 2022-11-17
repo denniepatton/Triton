@@ -1,0 +1,24 @@
+# config for Triton.snakefile
+# Robert Patton, rpatton@fredhutch.org (Ha Lab)
+# v1.0
+
+
+################
+# config files #
+################
+
+cluster_slurm: config/cluster_slurm.yaml # used to get info about available CPUs
+# annotation: config/Ensembl104_LGB_TSS.bed # reference annotation
+# annotation: config/377TFs.txt # reference annotation
+annotation: config/test_composites.txt # reference annotation
+
+##############
+# parameters #
+##############
+
+reference_genome: /fh/fast/ha_g/grp/reference/GRCh38/GRCh38.fa # use hg38
+results_dir: results # where your results will go
+map_quality: 20 # minimum mapping quality to keep a read
+size_range: 15 500 # range of fragment lengths to be used for analysis
+window: 2000 # None to use full site range; required for composite
+composite: True # True if passing a list of BEDs; false if a single BED

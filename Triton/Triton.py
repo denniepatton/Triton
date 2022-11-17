@@ -1,47 +1,8 @@
 # Robert Patton, rpatton@fredhutch.org
-# v1.0.0, 10/27/2022
+# v1.0.0, 11/15/2022
 
-# Modified from GenerateCNNInputs.py v1.1.0, GenerateFFTFeatures.py v5.0.0
-# TODO: print "fingerprint" and see if any natural patterns arise
-# Output structure (region-level features as a dictionary, region-level profiles as a single numpy matrix):
-# ----------------------------------------------------------------------------------------------------------------------
-# ### Region-level features (fragmentation):
-# 1: frag-mean: fragment lengths' mean
-# 2: frag-std: fragment lengths' standard deviation
-# 3: frag-mad: fragment lengths' MAD (Mean Absolute Deviation)
-# 4: frag-rat: fragment lengths' short:long ratio (x <= 120 / 140 <= x <= 250)
-# 5: frag-ent: fragment lengths' Shannon entropy, normalized by Dirichlet expected profile in the same region
-# ### Region-level features (phasing):
-# 6: np-score: Nucleosome Phasing score
-# 7: np-period: phased-nucleosome periodicity
-# ### Region-level features (profile-based):
-# 8: mean-depth: mean depth in the region (GC-corrected, if provided)
-# 9: cd-shoulder*: central dip/peak value as a fraction of the mean value at the predicted +/-1 nucleosomes
-# 10: cd-mean*: central dip/peak value as a fraction of the mean depth in the region
-# 11: flank-diff*: height of +1 nucleosome / height of -1 nucleosome
-# 12: plus-one-loc*: location relative to position of plus-one nucleosome
-# 13: minus-one-loc*: location relative to position of minus-one nucleosome
-# ### Region-level profiles (all un-normalized, nt-resolution)*:
-# 1: GC-corrected (if provided by Griffin) depth
-# 2: Nucleosome-level phased profile
-# 3: Nucleosome center profile
-# 4: Mean fragment size
-# 5: Fragment size Shannon entropy
-# 6: Region fragment profile normalized Shannon entropy
-# 7: Fragment heterogeneity (unique fragment lengths / total fragments)
-# 8: Fragment MAD (Mean Absolute Deviation)
-# 9: Short:long ratio (x <= 120 / 140 <= x <= 250)
-# 10: A (Adenine) frequency
-# 11: C (Cytosine) frequency
-# 12: G (Guanine) frequency
-# 13: T (Tyrosine) frequency
-# * these features are output as np.nan if window == False
-# ----------------------------------------------------------------------------------------------------------------------
-# Inputs are BAM of interest (sample), associated GC_bias, a BED-style file with equal-sized regions of interest,
-# reference sequence, and optionally a list of regions (corresponding to the names used in the BED file) for which
-# the output array will be printed for visualization. Outputs are numpy arrays for each sample-region combination,
-# labeled as sample_region.npy (numpy format, for matching with truth values downstream). Non one-hot encoded outputs
-# are all standardized so that max = 1.0, min = 0.0 (for deep learning), and 5' -> 3' directionality is enforced.
+# Originally modified from GenerateCNNInputs.py v1.1.0, GenerateFFTFeatures.py v5.0.0
+# Output structure (region-level features as a .tsv, region-level profiles as .npz numpy type):
 
 import os
 import sys
@@ -54,14 +15,57 @@ from multiprocessing import Pool
 from scipy.fft import rfft, rfftfreq, irfft
 from triton_helpers import *
 
-# default values
-freq_max = 0.0068493  # theoretical nucleosome period is 146 bp -> f = 0.0068493
+# constants and defaults
+freq_max = 0.0068493  # theoretical minimum nucleosome period is 146 bp -> f = 0.0068493
 low_1, high_1 = 0.00556, 0.00667  # range_1: T = 150-180 bp (f = 0.00556 - 0.00667)
 low_2, high_2 = 0.00476, 0.00555  # range_2: T = 180-210 bp (f = 0.00476 - 0.00555)
 chr_idx, start_idx, stop_idx, site_idx, strand_idx, pos_idx = 0, 1, 2, 3, 5, 6  # default BED indices
 
 
-def _generate_profile(region, params):
+def generate_profile(region, params):
+    """
+    Generates single or composite signal profiles and extracts features (fragmentation, nucleosome phasing, and profile
+    shape-based) for a single sample. Utilizes functions from triton_helpers.py.
+        Parameters:
+            region (string): either a file path pointing to a BED-like file (composite) or a BED-like line
+            params (list): bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack
+        Returns:
+            site: annotation name if stacked, "name" from BED file for each region otherwise
+                ### Region-level features (fragmentation) ###
+            fragment-mean: fragment lengths' mean
+            fragment-stdev: fragment lengths' standard deviation
+            fragment-mad: fragment lengths' MAD (Mean Absolute Deviation)
+            fragment-ratio: fragment lengths' short:long ratio (x <= 120 / 140 <= x <= 250)
+            fragment-entropy: fragment lengths' Shannon entropy
+                ### Region-level features (phasing) ###
+            np-score: Nucleosome Phasing score
+            np-period: phased-nucleosome periodicity
+                ### Region-level features (profile-based) ###
+            mean-depth: mean depth in the region (GC-corrected, if provided)
+            var-ratio: ratio of variation to constant noise in the phased signal
+            central-depth*: central inflection value as a fraction of the total variation (+ = peak, - = trough)
+            plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome, relative to variation minimum
+            central-loc*: location of central inflection relative to window center (0)
+            plus-one-pos*: location relative to central-loc of plus-one nucleosome
+            minus-one-pos*: location relative to central-loc of minus-one nucleosome
+                ### Region-level profiles (all un-normalized, nt-resolution) ###
+            numpy array: shape 13xN containing:
+                1: Depth (GC-corrected, if provided)
+                2: Nucleosome-level phased profile
+                3: Nucleosome center profile (GC-corrected, if provided)
+                4: Mean fragment size
+                5: Fragment size Shannon entropy
+                6: Region fragment profile Dirichlet-normalized Shannon entropy
+                7: Fragment heterogeneity (unique fragment lengths / total fragments)
+                8: Fragment MAD (Mean Absolute Deviation)
+                9: Short:long ratio (x <= 120 / 140 <= x <= 250)
+                10: A (Adenine) frequency**
+                11: C (Cytosine) frequency**
+                12: G (Guanine) frequency**
+                13: T (Tyrosine) frequency**
+            * these features are output as np.nan if window == None
+            ** sequence is based on the reference, not the reads
+    """
     bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack = params
     bam = pysam.AlignmentFile(bam_path, 'rb')
     ref_seq = pysam.FastaFile(ref_seq_path)
@@ -74,9 +78,10 @@ def _generate_profile(region, params):
         fragment_length_profile = [[] for _ in range(roi_length)]
         oh_seq = np.zeros((roi_length, 5))
         with open(region.strip(), 'r') as sites_file:
-            next(sites_file)  # skip header
             for entry in sites_file:  # iterate through regions in this particular BED file
                 bed_tokens = entry.strip().split('\t')
+                if not bed_tokens[pos_idx].isdigit():  # header or typo line
+                    continue
                 chrom, center_pos = str(bed_tokens[chr_idx]), int(bed_tokens[pos_idx])
                 if strand_idx is not None:
                     strand = str(bed_tokens[strand_idx])
@@ -85,6 +90,7 @@ def _generate_profile(region, params):
                 start_pos = center_pos - int(window/2) - 500
                 stop_pos = center_pos + int(window/2) + 500
                 # process all fragments falling inside the ROI
+                if start_pos < 0: continue
                 segment_reads = bam.fetch(chrom, start_pos, stop_pos)
                 roi_sequence = ref_seq.fetch(chrom, start_pos, stop_pos).upper()
                 if strand == '+': oh_seq = np.add(oh_seq, one_hot_encode(roi_sequence))
@@ -133,7 +139,7 @@ def _generate_profile(region, params):
                                 if nc_cov is not None:
                                     for index in [val for val in nc_cov if 0 <= val < roi_length]:
                                         nc_signal[index] += 1 / fragment_bias / nc_spread
-                            else:  # negative strand, flip array before adding TODO: make sure this is right/needed
+                            else:  # negative strand:
                                 for index in [val for val in fragment_cov if 0 <= val < roi_length]:
                                     fragment_length_profile[roi_length - index].append(abs(fragment_length))
                                     depth[roi_length - index] += 1 / fragment_bias
@@ -214,21 +220,12 @@ def _generate_profile(region, params):
             depth = depth[::-1]
             fragment_length_profile = fragment_length_profile[::-1]
             nc_signal = nc_signal[::-1]
-    # generate phased profile and phasing/region-level features ########################################################
+    # generate phased profile and phasing/region-level features --------------------------------------------------------
     mean_depth = np.mean(depth[500:-500])
-    ################### TEST ############################
+    if mean_depth < 1.0:
+        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
+               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
     fourier = rfft(np.asarray(nc_signal))
-    freqs = rfftfreq(roi_length)
-    test_freqs = [idx for idx, val in enumerate(freqs) if 0 < val <= freq_max]  # frequencies in filter
-    clean_fft = [0] * (len(fourier) + 1)
-    try:
-        clean_fft[test_freqs[0]:test_freqs[-1]] = fourier[test_freqs[0]:test_freqs[-1]]
-        inverse_signal = irfft(clean_fft, n=roi_length)  # reconstruct signal
-        nc_signal = inverse_signal + len(inverse_signal) * [mean_depth]  # add in base component
-    except IndexError:  # not enough data to construct a reasonable Fourier
-        nc_signal = [0] * roi_length
-    ########
-    fourier = rfft(np.asarray(depth))
     freqs = rfftfreq(roi_length)
     range_1 = [idx for idx, val in enumerate(freqs) if low_1 <= val <= high_1]
     range_2 = [idx for idx, val in enumerate(freqs) if low_2 <= val <= high_2]
@@ -243,35 +240,60 @@ def _generate_profile(region, params):
     try:
         clean_fft[test_freqs[0]:test_freqs[-1]] = fourier[test_freqs[0]:test_freqs[-1]]
         inverse_signal = irfft(clean_fft, n=roi_length)  # reconstruct signal
-        phased_signal = inverse_signal + len(inverse_signal) * [mean_depth]  # add in base component
+        phased_signal = inverse_signal + len(inverse_signal) * [np.mean(nc_signal[500:-500])]  # add in base component
     except IndexError:  # not enough data to construct a reasonable Fourier
         phased_signal = [0] * roi_length
-    # remove the 500 bp buffer from each side of the signals
+    # remove the 500 bp buffer from each side of the signal
     depth = depth[500:-500]
     phased_signal = phased_signal[500:-500]
     nc_signal = nc_signal[500:-500]
     fragment_length_profile = fragment_length_profile[500:-500]
     oh_seq = oh_seq[500:-500]
-    max_values, peaks = local_peaks(phased_signal, depth)
+    var_range = max(phased_signal) - min(phased_signal)
+    var_rat = var_range / min(phased_signal)
+    max_values, peaks = local_peaks(phased_signal, nc_signal)
     if window is not None:
-        inflection = min(phased_signal[int(window/2 - 100):int(window/2 + 100)])  # assume minimum, then double-check
-        inflection_loc = np.where(phased_signal == inflection)[0]
-        if phased_signal[inflection_loc - 5] < inflection or phased_signal[inflection_loc + 5] < inflection:  # not min
-            inflection = max(phased_signal[int(window/2 - 100):int(window/2 + 100)])
-            inflection_loc = np.where(phased_signal == inflection)[0]
-        left_max_loc, right_max_loc = nearest_peaks(inflection_loc, peaks)
-        left_max, right_max = phased_signal[left_max_loc], phased_signal[right_max_loc]
-        cd_shoulder = ((left_max + right_max) / 2 - inflection) / ((left_max + right_max) / 2)
-        cd_mean = ((left_max + right_max) / 2 - inflection) / mean_depth
-        flank_diff = right_max / left_max
-        minus_one_loc, plus_one_loc = left_max_loc - int(window / 2), right_max_loc - int(window / 2)
+        trough = True
+        inflection = min(phased_signal[int(window/2 - 73):int(window/2 + 73)])  # assume minimum, then double-check
+        inflection_loc = np.where(phased_signal == inflection)
+        if len(inflection_loc) > 1:
+            inflection_loc = np.absolute(inflection_loc - window/2).argmin()[0]
+        else:
+            inflection_loc = inflection_loc[0][0]
+        if phased_signal[inflection_loc - 3] < inflection or phased_signal[inflection_loc + 3] < inflection:  # not min
+            inflection = max(phased_signal[int(window/2 - 73):int(window/2 + 73)])
+            inflection_loc = np.where(phased_signal == inflection)
+            trough = False
+            if len(inflection_loc) > 1:
+                inflection_loc = np.absolute(inflection_loc - window / 2).argmax()[0]
+            else:
+                inflection_loc = inflection_loc[0][0]
+            if phased_signal[inflection_loc - 3] > inflection or phased_signal[inflection_loc + 3] > inflection:
+                # saddle: inconclusive
+                inflection_loc = np.nan
+        if not np.isnan(inflection_loc):
+            left_max_loc, right_max_loc = nearest_peaks(inflection_loc, peaks)
+            if not np.isnan(left_max_loc) and not np.isnan(right_max_loc):
+                left_max, right_max = phased_signal[left_max_loc], phased_signal[right_max_loc]
+                if trough:
+                    cd_mean = (inflection - max([left_max, right_max])) / var_range
+                else:
+                    left_min_loc, right_min_loc = nearest_troughs(inflection_loc, phased_signal)
+                    left_min, right_min = phased_signal[left_min_loc], phased_signal[right_min_loc]
+                    cd_mean = (inflection - min([left_min, right_min])) / var_range
+                flank_diff = (right_max - min(phased_signal)) / (left_max - min(phased_signal))
+                minus_one_loc, plus_one_loc = left_max_loc - inflection_loc, right_max_loc - inflection_loc
+            else:
+                cd_mean, flank_diff, minus_one_loc, plus_one_loc = np.nan, np.nan, np.nan, np.nan
+        else:
+            cd_mean, flank_diff, minus_one_loc, plus_one_loc = np.nan, np.nan, np.nan, np.nan
     else:
-        cd_shoulder, cd_mean, flank_diff, minus_one_loc, plus_one_loc = np.nan, np.nan, np.nan, np.nan, np.nan
+        cd_mean, flank_diff, minus_one_loc, plus_one_loc, inflection_loc = np.nan, np.nan, np.nan, np.nan, np.nan
     if len(max_values) < 1:
         np_period = np.nan
     else:
         np_period = round(roi_length / len(peaks), 2)
-    # generate fragment profiles and fragmentation features ############################################################
+    # generate fragment profiles and fragmentation features ------------------------------------------------------------
     frag_mean = np.mean(roi_fragment_lengths)
     frag_std = np.std(roi_fragment_lengths)
     frag_mad = np.median(np.absolute(roi_fragment_lengths - np.median(roi_fragment_lengths)))
@@ -287,33 +309,55 @@ def _generate_profile(region, params):
                       fragment_length_profile]
     # sequence profile
     seq_profile = np.delete(oh_seq, 0, 1)  # remove the N row
-    # combine and save profiles ########################################################################################
+    # combine and save profiles ----------------------------------------------------------------------------------------
     signal_array = np.column_stack((depth, phased_signal, nc_signal, mf_profile, shan_profile,
                                     norm_profile, hetero_profile, mad_profile, ratio_profile))
     out_array = np.concatenate((signal_array, seq_profile), axis=1)
-    return site, frag_mean, frag_std, frag_mad, frag_rat, frag_ent, np_score, np_period, mean_depth, cd_shoulder,\
-           cd_mean, flank_diff, plus_one_loc, minus_one_loc, out_array
+    return site, frag_mean, frag_std, frag_mad, frag_rat, frag_ent, np_score, np_period, mean_depth, var_rat,\
+           cd_mean, flank_diff, inflection_loc - int(window/2), plus_one_loc, minus_one_loc, out_array
 
 
 def main():
+    """
+    Takes in input parameters for a single sample Triton run, evaluates the site list format, manages breaking up
+    sites into chunks to be run in parallel with generate_profile(), then combines outputs from each core and saves
+    them to two files: sample_name_TritonFeatures.tsv and sample_name_TritonProfiles.npz containing region-level
+    features and signal profiles, respectively.
+    """
+    def str2bool(v):
+        """
+        Stand-in type to read boolean values from the command line
+            Parameters:
+                v (string): input bool as string
+            Returns:
+                boolean
+        """
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
+
     # parse command line arguments:
-    parser = argparse.ArgumentParser(description='\n### Triton ###')
+    parser = argparse.ArgumentParser(description='\n### Triton.py ### main Triton pipeline')
     parser.add_argument('-n', '--sample_name', help='sample identifier', required=True)
-    parser.add_argument('-i', '--input', help='BAM file path', required=True)
-    parser.add_argument('-b', '--bias', help='GC bias file (from Griffin)', default=None)
-    parser.add_argument('-a', '--annotation', help='regions of interest in BED or list of BEDs', required=True)
+    parser.add_argument('-i', '--input', help='input BAM file', required=True)
+    parser.add_argument('-b', '--bias', help='input-matched GC bias file (from Griffin)', default=None)
+    parser.add_argument('-a', '--annotation', help='regions of interest as BED or list of BEDs', required=True)
     parser.add_argument('-g', '--reference_genome', help='reference genome (.fa)', required=True)
     parser.add_argument('-r', '--results_dir', help='directory for results', required=True)
     parser.add_argument('-q', '--map_quality', help='minimum mapping quality (default=20)', type=int, default=20)
-    parser.add_argument('-f', '--size_range', help='fragment size range (bp; default=[15, 500])', nargs=2, type=int,
+    parser.add_argument('-f', '--size_range', help='fragment size range (bp); default=(15, 500)', nargs=2, type=int,
                         default=(15, 500))
     parser.add_argument('-c', '--cpus', help='number of CPUs to use for parallel processing', type=int, required=True)
     parser.add_argument('-w', '--window', help='window size (bp) for composite sites', type=int, default=None)
-    parser.add_argument('-s', '--composite', help='whether to run in composite-site mode', type=bool, default=False)
+    parser.add_argument('-s', '--composite', help='whether to run in composite-site mode', type=str2bool, default=False)
     args = parser.parse_args()
 
     print('Loading input files . . .')
-
     sample_name = args.sample_name
     bam_path = args.input
     bias_path = args.bias
@@ -350,13 +394,15 @@ def main():
     elif stack and window is not None:
         print('Running Triton in composite mode.')
         sites = [region for region in open(sites_path, 'r')]  # a list of BED-like paths
-        header = [site for site in open(sites[0].strip(), 'r')].pop(0).split('\t')  # retrieve one header
+        header = [site for site in open(sites[0].strip(), 'r')].pop(0).strip().split('\t')  # retrieve one header
     else:
         print('Running Triton in individual mode.')
         sites = [region for region in open(sites_path, 'r')]  # a list of regions
-        header = sites.pop(0).split('\t')
+        header = sites.pop(0).strip().split('\t')
     # Below checks for standard BED column names and the position column if window=True, updating their indices
     # if necessary. If a non-standard header format is used defaults indices will be used, which may error.
+    # In composite mode, each individual BED-like file is assumed to have an identical header/header sorting;
+    # will error if this is not the case.
     if 'chrom' in header:
         chr_idx = header.index('chrom')
     elif 'Chrom' in header:
@@ -384,7 +430,8 @@ def main():
     elif 'Gene' in header:
         site_idx = header.index('Gene')
     else:
-        print('No "name" column found in BED file(s): defaulting to index 3 (' + header[3] + ')')
+        print('No "name" column found in BED file(s): defaulting to index 3 (' + header[3] + ')\n'
+              '* if running in composite mode site names will be taken from the annotation name instead')
     if 'strand' in header:
         strand_idx = header.index('strand')
     else:
@@ -397,36 +444,38 @@ def main():
     random.shuffle(sites)  # to spread sites evenly between cores given variable size
     params = [bam_path, results_dir, size_range, gc_bias, ref_seq_path, map_q, window, stack]
 
-    print('Running Triton on ' + str(len(sites)) + ' region sets . . .')
+    print('\n### Running Triton on ' + str(len(sites)) + ' region sets ###\n')
+    if len(sites) < cpus:  # more cores than we need - use at most 1 per site
+        print('More CPUs passed than sites - scaling down to ' + str(len(sites)))
+        cpus = len(sites)
 
     with Pool(cpus) as pool:
-        results = list(pool.imap_unordered(partial(_generate_profile, params=params), sites, len(sites) // cpus))
+        results = list(pool.imap_unordered(partial(generate_profile, params=params), sites, len(sites) // cpus))
 
     print('Merging and saving results . . .')
     signal_dict = {}
-    fm = {sample_name: {'Sample': sample_name}}
+    fm = {sample_name: {'sample': sample_name}}
     for result in results:
-        fm[sample_name][result[0] + '_frag-mean'] = result[1]
-        fm[sample_name][result[0] + '_frag-std'] = result[2]
-        fm[sample_name][result[0] + '_frag-mad'] = result[3]
-        fm[sample_name][result[0] + '_frag-rat'] = result[4]
-        fm[sample_name][result[0] + '_frag-ent'] = result[5]
+        fm[sample_name][result[0] + '_fragment-mean'] = result[1]
+        fm[sample_name][result[0] + '_fragment-stdev'] = result[2]
+        fm[sample_name][result[0] + '_fragment-mad'] = result[3]
+        fm[sample_name][result[0] + '_fragment-ratio'] = result[4]
+        fm[sample_name][result[0] + '_fragment-entropy'] = result[5]
         fm[sample_name][result[0] + '_np-score'] = result[6]
         fm[sample_name][result[0] + '_np-period'] = result[7]
         fm[sample_name][result[0] + '_mean-depth'] = result[8]
-        fm[sample_name][result[0] + '_cd-shoulder'] = result[9]
-        fm[sample_name][result[0] + '_cd-mean'] = result[10]
-        fm[sample_name][result[0] + '_flank-diff'] = result[11]
-        fm[sample_name][result[0] + '_plus-one-loc'] = result[12]
-        fm[sample_name][result[0] + '_minus-one-loc'] = result[13]
-        signal_dict[result[0]] = result[14]
+        fm[sample_name][result[0] + '_var-ratio'] = result[9]
+        fm[sample_name][result[0] + '_central-depth'] = result[10]
+        fm[sample_name][result[0] + '_plus-minus-ratio'] = result[11]
+        fm[sample_name][result[0] + '_central-loc'] = result[12]
+        fm[sample_name][result[0] + '_plus-one-pos'] = result[13]
+        fm[sample_name][result[0] + '_minus-one-pos'] = result[14]
+        signal_dict[result[0]] = result[15]
     df = pd.DataFrame(fm)
-    out_file = results_dir + '/' + sample_name + '/' + sample_name + '_TritonFeatures.tsv'
+    out_file = results_dir + '/' + sample_name + '_TritonFeatures.tsv'
     if not os.path.exists(results_dir):
         os.mkdir(results_dir)
-    if not os.path.exists(results_dir + '/' + sample_name):
-        os.mkdir(results_dir + '/' + sample_name)
-    np.savez_compressed(results_dir + '/' + sample_name + '/' + sample_name + '_TritonProfiles', **signal_dict)
+    np.savez_compressed(results_dir + '/' + sample_name + '_TritonProfiles', **signal_dict)
     df.to_csv(out_file, sep='\t')
 
     print('Finished')
