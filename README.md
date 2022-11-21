@@ -1,6 +1,8 @@
-# Triton <img src="misc/logo_v1.png" width="120" align="left">
-a cell free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic 
+# Triton <img src="misc/logo_v1.png" width="140" align="left">
+a cell free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic  
 and nucleosome-phasing analyses on individual or composite genomic regions
+<br/><br/>
+
 
 ## Description
 Triton conducts nucleotide-resolution profile analysis for cfDNA samples in BAM format, given a list of individual regions of interest (BED containing,
@@ -14,43 +16,43 @@ nucleosome derived signal, from which specific features are drawn.
 Triton profiles are output as a NumPy compressed file (.npz), one for each sample, containing one object for each queried (composite) site.
 Nucleotide-resolution profiles include:
 
-  1: Depth (GC-corrected, if provided) 
-  2: Nucleosome-level phased profile 
-  3: Nucleosome center profile (GC-corrected, if provided) 
-  4: Mean fragment size 
-  5: Fragment size Shannon entropy 
-  6: Region fragment profile Dirichlet-normalized Shannon entropy 
-  7: Fragment heterogeneity (unique fragment lengths / total fragments) 
-  8: Fragment MAD (Mean Absolute Deviation) 
-  9: Short:long ratio (x <= 120 / 140 <= x <= 250) 
-  10: A (Adenine) frequency** 
-  11: C (Cytosine) frequency** 
-  12: G (Guanine) frequency** 
-  13: T (Tyrosine) frequency** 
+    1: Depth (GC-corrected, if provided)  
+    2: Nucleosome-level phased profile  
+    3: Nucleosome center profile (GC-corrected, if provided)  
+    4: Mean fragment size  
+    5: Fragment size Shannon entropy  
+    6: Region fragment profile Dirichlet-normalized Shannon entropy  
+    7: Fragment heterogeneity (unique fragment lengths / total fragments)  
+    8: Fragment MAD (Mean Absolute Deviation)  
+    9: Short:long ratio (x <= 120 / 140 <= x <= 250)  
+    10: A (Adenine) frequency**  
+    11: C (Cytosine) frequency**  
+    12: G (Guanine) frequency**  
+    13: T (Tyrosine) frequency**  
   
 Triton region-level features are output as a .tsv file and include:
 
-  site: annotation name if stacked, "name" from BED file for each region otherwise
-      ### Region-level features (fragmentation) ###
-  fragment-mean: fragment lengths' mean
-  fragment-stdev: fragment lengths' standard deviation
-  fragment-mad: fragment lengths' MAD (Mean Absolute Deviation)
-  fragment-ratio: fragment lengths' short:long ratio (x <= 120 / 140 <= x <= 250)
-  fragment-entropy: fragment lengths' Shannon entropy
-      ### Region-level features (phasing) ###
-  np-score: Nucleosome Phasing score
-  np-period: phased-nucleosome periodicity
-      ### Region-level features (profile-based) ###
-  mean-depth: mean depth in the region (GC-corrected, if provided)
-  var-ratio: ratio of variation to constant noise in the phased signal
-  central-depth*: central inflection value as a fraction of the total variation (+ = peak, - = trough)
-  plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome, relative to variation minimum
-  central-loc*: location of central inflection relative to window center (0)
-  plus-one-pos*: location relative to central-loc of plus-one nucleosome
-  minus-one-pos*: location relative to central-loc of minus-one nucleosome
+    site: annotation name if stacked, "name" from BED file for each region otherwise  
+        ##Region-level features (fragmentation)##  
+    fragment-mean: fragment lengths' mean  
+    fragment-stdev: fragment lengths' standard deviation  
+    fragment-mad: fragment lengths' MAD (Mean Absolute Deviation)  
+    fragment-ratio: fragment lengths' short:long ratio (x <= 120 / 140 <= x <= 250)  
+    fragment-entropy: fragment lengths' Shannon entropy  
+        ##Region-level features (phasing)##  
+    np-score: Nucleosome Phasing score  
+    np-period: phased-nucleosome periodicity  
+        ##Region-level features (profile-based)##  
+    mean-depth: mean depth in the region (GC-corrected, if provided)  
+    var-ratio: ratio of variation to constant noise in the phased signal  
+    central-depth*: central inflection value as a fraction of the total variation (+ = peak, - = trough)  
+    plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome, relative to variation minimum  
+    central-loc*: location of central inflection relative to window center (0)  
+    plus-one-pos*: location relative to central-loc of plus-one nucleosome  
+    minus-one-pos*: location relative to central-loc of minus-one nucleosome  
   
-* these features are output as np.nan if window == None
-** sequence is based on the reference, not the reads
+\* these features are output as np.nan if window == None  
+\** sequence is based on the reference, not the reads
 
 ### Examples
 
