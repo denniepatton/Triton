@@ -1,7 +1,5 @@
-# Triton <img src="misc/logo_v1.png" width="160" align="left">
+# Triton <img src="misc/logo_v1.png" width="120" align="left">
 a cell free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic and nucleosome-phasing analyses on individual or composite genomic regions
-
-
 
 ## Description
 Triton conducts nucleotide-resolution profile analysis for cfDNA samples in BAM format, given a list of individual regions of interest (BED containing,
