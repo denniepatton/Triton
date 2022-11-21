@@ -1,5 +1,5 @@
 # Triton <img src="misc/logo_v1.png" width="120" align="left">
-a cell free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic. 
+a cell free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic 
 and nucleosome-phasing analyses on individual or composite genomic regions
 
 ## Description
@@ -14,19 +14,19 @@ nucleosome derived signal, from which specific features are drawn.
 Triton profiles are output as a NumPy compressed file (.npz), one for each sample, containing one object for each queried (composite) site.
 Nucleotide-resolution profiles include:
 
-  1: Depth (GC-corrected, if provided). 
-  2: Nucleosome-level phased profile. 
-  3: Nucleosome center profile (GC-corrected, if provided). 
-  4: Mean fragment size. 
-  5: Fragment size Shannon entropy. 
-  6: Region fragment profile Dirichlet-normalized Shannon entropy. 
-  7: Fragment heterogeneity (unique fragment lengths / total fragments). 
-  8: Fragment MAD (Mean Absolute Deviation). 
-  9: Short:long ratio (x <= 120 / 140 <= x <= 250). 
-  10: A (Adenine) frequency**. 
-  11: C (Cytosine) frequency**. 
-  12: G (Guanine) frequency**. 
-  13: T (Tyrosine) frequency**. 
+  1: Depth (GC-corrected, if provided) 
+  2: Nucleosome-level phased profile 
+  3: Nucleosome center profile (GC-corrected, if provided) 
+  4: Mean fragment size 
+  5: Fragment size Shannon entropy 
+  6: Region fragment profile Dirichlet-normalized Shannon entropy 
+  7: Fragment heterogeneity (unique fragment lengths / total fragments) 
+  8: Fragment MAD (Mean Absolute Deviation) 
+  9: Short:long ratio (x <= 120 / 140 <= x <= 250) 
+  10: A (Adenine) frequency** 
+  11: C (Cytosine) frequency** 
+  12: G (Guanine) frequency** 
+  13: T (Tyrosine) frequency** 
   
 Triton region-level features are output as a .tsv file and include:
 
