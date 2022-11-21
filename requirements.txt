@@ -1,8 +1,11 @@
+certifi==2022.9.24
+charset-normalizer==2.1.1
 contourpy==1.0.5
 cycler==0.11.0
 fonttools==4.38.0
+idna==3.4
 kiwisolver==1.4.4
-matplotlib==3.6.1
+matplotlib==3.6.2
 nump==0.1
 numpy==1.23.4
 packaging==21.3
@@ -12,5 +15,9 @@ pyparsing==3.0.9
 pysam==0.19.1
 python-dateutil==2.8.2
 pytz==2022.5
+requests==2.28.1
 scipy==1.9.3
+seaborn==0.12.1
 six==1.16.0
+-e git+ssh://git@github.com/denniepatton/Triton@48b1aed91fbc2fd262b5b97f800b6029e0bc2033#egg=Triton
+urllib3==1.26.12
