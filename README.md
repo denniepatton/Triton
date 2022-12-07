@@ -54,7 +54,7 @@ Triton region-level features are output as a .tsv file and include:
     central-heterogeneity*: mean fragment heterogeneity value in the +/-5 bp region about the central-loc  
   
 \* these features are output as np.nan if window == None  
-\** sequence is based on the reference, not the reads
+\** sequence is based on the reference, not the reads  
 \*** minus-one, plus-one, and inflection locs are only called if window != None, and supersede peak/trough
 
 ### Examples
