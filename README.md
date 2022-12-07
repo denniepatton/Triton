@@ -21,10 +21,10 @@ Nucleotide-resolution profiles include:
     3: Nucleosome center profile (GC-corrected, if provided)  
     4: Mean fragment size  
     5: Fragment size Shannon entropy  
-    6: Region fragment profile Dirichlet-normalized Shannon entropy  
-    7: Fragment heterogeneity (unique fragment lengths / total fragments)  
-    8: Fragment MAD (Mean Absolute Deviation)  
-    9: Short:long ratio (x <= 120 / 140 <= x <= 250)  
+    6: Fragment heterogeneity (unique fragment lengths / total fragments)  
+    7: Fragment MAD (Mean Absolute Deviation)  
+    8: Short:long ratio (x <= 120 / 140 <= x <= 250)  
+    9: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***  
     10: A (Adenine) frequency**  
     11: C (Cytosine) frequency**  
     12: G (Guanine) frequency**  
@@ -42,17 +42,20 @@ Triton region-level features are output as a .tsv file and include:
         ##Region-level features (phasing)##  
     np-score: Nucleosome Phasing score  
     np-period: phased-nucleosome periodicity  
+    np-amplitude: phased-nucleosome mean amplitude  
         ##Region-level features (profile-based)##  
     mean-depth: mean depth in the region (GC-corrected, if provided)  
     var-ratio: ratio of variation to constant noise in the phased signal  
-    central-depth*: central inflection value as a fraction of the total variation (+ = peak, - = trough)  
-    plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome, relative to variation minimum  
-    central-loc*: location of central inflection relative to window center (0)  
     plus-one-pos*: location relative to central-loc of plus-one nucleosome  
     minus-one-pos*: location relative to central-loc of minus-one nucleosome  
+    plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome  
+    central-loc*: location of central inflection relative to window center (0)  
+    central-depth*: phased signal value at the central-loc (with mean in region set to 1)  
+    central-heterogeneity*: mean fragment heterogeneity value in the +/-5 bp region about the central-loc  
   
 \* these features are output as np.nan if window == None  
 \** sequence is based on the reference, not the reads
+\*** minus-one, plus-one, and inflection locs are only called if window != None, and supersede peak/trough
 
 ### Examples
 
@@ -66,7 +69,7 @@ e.g. Convolutional Neural Networks (CNNs).
 
 ### Publications
 
-<https://doi.org/10.1158/2159-8290.CD-22-0692>
+<[https://doi.org/10.1158/2159-8290.CD-22-0692](https://doi.org/10.1158/2159-8290.CD-22-0692)>
 
 ## Usage
 
@@ -80,7 +83,7 @@ If you have any questions or feedback, please contact me at:
 
 ## Acknowledgements
 Triton is developed and maintained by Robert D. Patton in the Gavin Ha Lab, Fred Hutchinson Cancer Center
-Anna-Lisa Doebley provided critical input and developed the GC-correction process used in Triotn, originally found
+Anna-Lisa Doebley provided critical input and developed the GC-correction process used in Triton, originally found
 in the Griffin (<https://github.com/GavinHaLab/Griffin>) pipeline.
 
 ## Software License
