@@ -82,7 +82,7 @@ If you have any questions or feedback, please contact me at:
 **Email:** <rpatton@fredhutch.org>
 
 ## Acknowledgements
-Triton is developed and maintained by Robert D. Patton in the Gavin Ha Lab, Fred Hutchinson Cancer Center
+Triton is developed and maintained by Robert D. Patton in the Gavin Ha Lab, Fred Hutchinson Cancer Center.  
 Anna-Lisa Doebley provided critical input and developed the GC-correction process used in Triton, originally found
 in the Griffin (<https://github.com/GavinHaLab/Griffin>) pipeline.
 
