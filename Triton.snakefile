@@ -2,11 +2,9 @@
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
 
 """
-CHECK BELOW
-# before running snakemake, do in tmux terminal:
+# before running snakemake at Fred Hutch, do in tmux terminal:
 ml snakemake/5.19.2-foss-2019b-Python-3.7.4
 ml Python/3.7.4-foss-2019b-fh1
-PATH="$PATH:/fh/fast/ha_g/user/rpatton/scripts/Triton"
 
 # command to run snakemake (remove -np at end when done validating):
 snakemake -s Triton.snakefile --latency-wait 60 --keep-going --cluster-config config/cluster_slurm.yaml --cluster "sbatch -p {cluster.partition} --mem={cluster.mem} -t {cluster.time} -c {cluster.ncpus} -n {cluster.ntasks} -o {cluster.output} -J {cluster.JobName}" -j 40 -np
@@ -56,3 +54,4 @@ rule combine_fms:
 		results_dir=config['results_dir']
 	shell:
 		'python Triton/triton_cleanup.py --inputs {input.fm_files} --results_dir {params.results_dir}'
+

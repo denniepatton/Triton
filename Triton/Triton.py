@@ -305,7 +305,10 @@ def generate_profile(region, params):
                    for point_frags in fragment_length_profile]
     hetero_profile = [len(set(point_frags)) / len(point_frags) if len(point_frags) != 0 else 0 for point_frags in
                       fragment_length_profile]
-    inflection_het = np.mean(hetero_profile[(inflection_loc - 5):(inflection_loc + 5)]) / np.mean(hetero_profile)
+    if not np.isnan(inflection_loc):
+        inflection_het = np.mean(hetero_profile[(inflection_loc - 5):(inflection_loc + 5)]) / np.mean(hetero_profile)
+    else:
+        inflection_het = np.nan
     # sequence profile
     seq_profile = np.delete(oh_seq, 0, 1)  # remove the N row
     # combine and save profiles ----------------------------------------------------------------------------------------

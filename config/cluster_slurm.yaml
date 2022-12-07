@@ -1,4 +1,5 @@
-# cluster_slurm.yaml for Triton.snakefile
+# cluster_slurm.yaml for Triton.snakefile, for use on Fred Hutch servers
+# (modfiy to fit your own needs if using snakemake in another setting)
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
 # v1.0
 
@@ -13,7 +14,7 @@ __default__:
 
 triton_main:
     partition: campus-new
-    mem: 32G # defaults to 4xncpus
+    mem: 32G # defaults to 4Gb x ncpus
     ncpus: 8 # number of cores to process each sample
     output: logs/cluster/{rule}.{wildcards.samples}.%A.out
     JobName: "{rule}.{wildcards.samples}"

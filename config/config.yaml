@@ -8,9 +8,8 @@
 ################
 
 cluster_slurm: config/cluster_slurm.yaml # used to get info about available CPUs
-# annotation: config/Ensembl104_LGB_TSS.bed # reference annotation
-# annotation: config/377TFs.txt # reference annotation
-annotation: config/test.txt # reference annotation
+# annotation: config/Ensembl104_LGB_TSS.bed # reference annotation: promoter regions
+annotation: config/377TFs.txt # reference annotation: TF composite regions
 
 ##############
 # parameters #

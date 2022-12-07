@@ -1,3 +1,0 @@
-/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC/LongATAC_ADexclusive_10000TFOverlap_Top1000.bed
-/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC/LongATAC_NEexclusive_10000TFOverlap_Top1000.bed
-/fh/fast/ha_g/user/rpatton/references/BEDs/hsNuc_iNPSPeak_bedops-intersect.bed
