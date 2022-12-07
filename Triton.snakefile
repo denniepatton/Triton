@@ -38,6 +38,7 @@ rule triton_main:
 		window = config['window'],
 		composite = config['composite']
 	shell:
+		# "python Triton/Triton_nuc_dist.py --sample_name {params.sample_name} \
 		"python Triton/Triton.py --sample_name {params.sample_name} \
 		--input {input.bam_path} --bias {input.bias_path} \
 		--annotation {params.annotation} \

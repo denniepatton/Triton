@@ -1,4 +1,46 @@
 samples:
+  NPH002:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH002.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH002.GC_bias.txt
+  NPH036:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH036.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH036.GC_bias.txt
+  NPH006:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH006.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH006.GC_bias.txt
+  HD45:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/HD45.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/HD45.GC_bias.txt
+  NPH012:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH012.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH012.GC_bias.txt
+  NPH034:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH034.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH034.GC_bias.txt
+  NPH033:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH033.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH033.GC_bias.txt
+  NPH003:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH003.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH003.GC_bias.txt
+  NPH023:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH023.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH023.GC_bias.txt
+  NPH007:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH007.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH007.GC_bias.txt
+  NPH026:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH026.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH026.GC_bias.txt
+  NPH018:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH018.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH018.GC_bias.txt
+  HD46:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/HD46.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/HD46.GC_bias.txt
+  NPH035:
+    bam: /fh/fast/ha_g/user/rpatton/HD_data/bams/NPH035.bam
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/NPH035.GC_bias.txt
   208-4_LuCaP:
     bam: /fh/fast/ha_g/user/rpatton/LuCaP_data/bams/208-4_LuCaP.bam
     GC_bias: /fh/fast/ha_g/user/rpatton/LuCaP_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/208-4_LuCaP.GC_bias.txt

@@ -49,7 +49,7 @@ def frag_ratio(frag_lengths):  # compute the ratio of short to long fragments
         ratio = short_frags / long_frags
         return ratio
     else:
-        return 0
+        return np.nan
 
 
 def shannon_entropy(values, bins, binned=False):
@@ -74,34 +74,34 @@ def mean_entropy(pdf_matrix, counts, bins):
 
 
 def point_entropy(total_lengths, point_lengths):
+    # normalized point entropy shows little difference from non-normalized; commented out
     min_size, max_size = min(total_lengths), max(total_lengths)
     bin_range = list(range(min_size, max_size, 1))
-    hist = np.histogram(total_lengths, bins=bin_range)[0]
-    hist = [h for h in hist if h != 0.0]
-    dist_pdfs = np.random.dirichlet(hist, 1000)
-    frag_nums = list(set([len(frags) for frags in point_lengths]))
-    norm_dict = {i: mean_entropy(dist_pdfs, i, bin_range) for i in frag_nums}
+    # hist = np.histogram(total_lengths, bins=bin_range)[0]
+    # hist = [h for h in hist if h != 0.0]
+    # dist_pdfs = np.random.dirichlet(hist, 1000)
+    # frag_nums = list(set([len(frags) for frags in point_lengths]))
+    # norm_dict = {i: mean_entropy(dist_pdfs, i, bin_range) for i in frag_nums}
     point_shannon_entropies = [shannon_entropy(frags, bin_range) for frags in point_lengths]
-    point_norm_entropies = [(val / norm_dict[len(frags)]) if len(frags) > 2 else 0 for val, frags
-                            in zip(point_shannon_entropies, point_lengths)]
-    return point_shannon_entropies, point_norm_entropies
-
-
-def normalize_data(data):
-    if np.max(data) - np.min(data) == 0:
-        return data
-    else:
-        return(data - np.min(data)) / (np.max(data) - np.min(data))
+    # point_norm_entropies = [(val / norm_dict[len(frags)]) if len(frags) > 2 else 0 for val, frags
+    #                         in zip(point_shannon_entropies, point_lengths)]
+    # return point_shannon_entropies, point_norm_entropies
+    return point_shannon_entropies
 
 
 def local_peaks(ys, xs):
+    # only appropriate for highly smooth data (FFT inverse with higher frequencies removed)
     max_values, max_indices = [], []
+    min_values, min_indices = [], []
     ysl = len(ys) - 1
     for i, y in enumerate(ys):
-        if 0 < i < ysl and ys[i - 1] <= y and y > ys[i + 1] and xs[i] > 0:  # local maxima
+        if 0 < i < ysl and ys[i - 1] < y and y > ys[i + 1] and xs[i] > 0:  # local maxima
             max_values.append(y)
             max_indices.append(i)
-    return max_values, max_indices
+        if 0 < i < ysl and ys[i - 1] > y and y < ys[i + 1]:  # local minima
+            min_values.append(y)
+            min_indices.append(i)
+    return max_values, max_indices, min_values, min_indices
 
 
 def nearest_peaks(ref_point, ref_list):
@@ -114,16 +114,6 @@ def nearest_peaks(ref_point, ref_list):
         right_index = ref_point + min([abs(i) for i in distances if i < 0])
     else:
         right_index = np.nan
-    return left_index, right_index
-
-
-def nearest_troughs(ref_point, signal):
-    left_index = ref_point - 1
-    while signal[left_index] < signal[left_index + 1]:
-        left_index -= 1
-    right_index = ref_point + 1
-    while signal[right_index] < signal[right_index - 1]:
-        right_index += 1
     return left_index, right_index
 
 
