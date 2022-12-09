@@ -167,7 +167,7 @@ def generate_profile(region, params):
             roi_length = stop_pos - start_pos
         # process all fragments falling inside the ROI
         segment_reads = bam.fetch(bed_tokens[0], start_pos, stop_pos)
-        window_sequence = ref_seq.fetch(bed_tokens[0], start_pos - 500, stop_pos - 500).upper()
+        window_sequence = ref_seq.fetch(bed_tokens[0], start_pos + 500, stop_pos - 500).upper()
         if strand == '+': oh_seq = one_hot_encode(window_sequence)
         else: oh_seq = one_hot_encode(window_sequence[::-1])
         fragment_length_profile = [[] for _ in range(window)]
@@ -443,12 +443,14 @@ def main():
               '* if running in composite mode site names will be taken from the annotation name instead')
     if 'strand' in header:
         strand_idx = header.index('strand')
+    elif 'Strand' in header:
+        strand_idx = header.index('Strand')
     else:
         print('WARNING: No "strand" column found in BED file(s): defaulting to "+" for all sites')
         strand_idx = None
-    if stack and 'position' in header:
+    if window and 'position' in header:
         pos_idx = header.index('position')
-    elif stack:
+    elif window:
         print('No "position" column found in BED file(s): defaulting to index 6 (' + header[6] + ')')
     random.shuffle(sites)  # to spread sites evenly between cores given variable size
 
