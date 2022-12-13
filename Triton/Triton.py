@@ -215,9 +215,9 @@ def generate_profile(region, params):
             nc_signal = nc_signal[::-1]
     # generate phased profile and phasing/region-level features --------------------------------------------------------
     mean_depth = np.mean(depth[500:-500])
-    if mean_depth < 1.0:
+    if mean_depth < 0.1:
         return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
-               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
     fourier = rfft(np.asarray(nc_signal))
     freqs = rfftfreq(roi_length)
     range_1 = [idx for idx, val in enumerate(freqs) if low_1 <= val <= high_1]

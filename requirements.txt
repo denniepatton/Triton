@@ -19,5 +19,4 @@ requests==2.28.1
 scipy==1.9.3
 seaborn==0.12.1
 six==1.16.0
--e git+ssh://git@github.com/denniepatton/Triton@48b1aed91fbc2fd262b5b97f800b6029e0bc2033#egg=Triton
 urllib3==1.26.12
