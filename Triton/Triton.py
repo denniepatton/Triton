@@ -1,5 +1,5 @@
 # Robert Patton, rpatton@fredhutch.org
-# v1.1.0, 12/05/2022
+# v1.2.0, 1/11/2023
 
 import os
 import sys
@@ -7,9 +7,10 @@ import pysam
 import random
 import pickle
 import argparse
+import numpy as np
 from functools import partial
 from multiprocessing import Pool
-from scipy.fft import rfft, rfftfreq, irfft
+from scipy.fft import rfft, irfft, rfftfreq
 from triton_helpers import *
 
 # constants and defaults
@@ -40,7 +41,7 @@ def generate_profile(region, params):
             np-amplitude: phased-nucleosome mean amplitude
                 ### Region-level features (profile-based) ###
             mean-depth: mean depth in the region (GC-corrected, if provided)
-            var-ratio: ratio of variation to constant noise in the phased signal
+            var-ratio: ratio of variation in total phased signal
             plus-one-pos*: location relative to central-loc of plus-one nucleosome
             minus-one-pos*: location relative to central-loc of minus-one nucleosome
             plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome
@@ -73,9 +74,8 @@ def generate_profile(region, params):
     if stack:  # assemble depth and fragment profiles for composite sites ----------------------------------------------
         site = os.path.basename(region).split('.')[0]  # use the file name as the feature name
         roi_length = window + 1000
-        depth = [0] * roi_length
-        nc_signal = [0] * roi_length
-        fragment_length_profile = [[] for _ in range(window)]
+        depth, nc_signal = np.zeros(roi_length), np.zeros(roi_length)
+        fragment_length_profile = [[] for _ in range(window)]  # kept as list which can append faster than np arrays
         oh_seq = np.zeros((window, 5))
         with open(region.strip(), 'r') as sites_file:
             for entry in sites_file:  # iterate through regions in this particular BED file
@@ -154,17 +154,14 @@ def generate_profile(region, params):
             strand = '+'
         if window is not None:
             roi_length = window + 1000
-            depth = [0] * roi_length
-            nc_signal = [0] * roi_length
             center_pos = int(bed_tokens[pos_idx])
             start_pos = center_pos - int(window / 2) - 500
             stop_pos = center_pos + int(window / 2) + 500
         else:
             start_pos = int(bed_tokens[start_idx]) - 500
             stop_pos = int(bed_tokens[stop_idx]) + 500
-            depth = [0] * (stop_pos - start_pos)
-            nc_signal = [0] * (stop_pos - start_pos)
             roi_length = stop_pos - start_pos
+        depth, nc_signal = np.zeros(roi_length), np.zeros(roi_length)
         # process all fragments falling inside the ROI
         segment_reads = bam.fetch(bed_tokens[0], start_pos, stop_pos)
         window_sequence = ref_seq.fetch(bed_tokens[0], start_pos + 500, stop_pos - 500).upper()
@@ -214,11 +211,11 @@ def generate_profile(region, params):
             fragment_length_profile = fragment_length_profile[::-1]
             nc_signal = nc_signal[::-1]
     # generate phased profile and phasing/region-level features --------------------------------------------------------
-    mean_depth = np.mean(depth[500:-500])
-    if mean_depth < 0.1:
+    if np.count_nonzero(depth) < 0.9 * roi_length:  # skip sites with less than 50% base coverage
         return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
                np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-    fourier = rfft(np.asarray(nc_signal))
+    mean_depth = np.mean(depth[500:-500])
+    fourier = rfft(nc_signal)
     freqs = rfftfreq(roi_length)
     range_1 = [idx for idx, val in enumerate(freqs) if low_1 <= val <= high_1]
     range_2 = [idx for idx, val in enumerate(freqs) if low_2 <= val <= high_2]
@@ -229,22 +226,25 @@ def generate_profile(region, params):
     else:
         np_score = np.nan
     test_freqs = [idx for idx, val in enumerate(freqs) if 0 < val <= freq_max]  # frequencies in filter
-    clean_fft = [0] * (len(fourier) + 1)
+    clean_fft = np.zeros(len(fourier) + 1, dtype='complex_')
     try:
         clean_fft[test_freqs[0]:test_freqs[-1]] = fourier[test_freqs[0]:test_freqs[-1]]
         inverse_signal = irfft(clean_fft, n=roi_length)  # reconstruct signal
-        phased_signal = inverse_signal + len(inverse_signal) * [np.mean(nc_signal[500:-500])]  # add in base component
+        phased_signal = inverse_signal + len(inverse_signal) * np.mean(nc_signal[500:-500])  # add in base component
     except IndexError:  # not enough data to construct a reasonable Fourier
-        phased_signal = [0] * roi_length
+        phased_signal = np.zeros(roi_length)
     # remove the 500 bp buffer from each side of the signal
     depth = depth[500:-500]
     phased_signal = phased_signal[500:-500]
     nc_signal = nc_signal[500:-500]
     signal_mean = np.mean(phased_signal)
-    var_range = max(phased_signal) - min(phased_signal)
-    var_rat = var_range / min(phased_signal)
+    var_range = np.max(phased_signal) - np.min(phased_signal)
+    if signal_mean == 0 or var_range == 0:
+        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, \
+               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+    var_rat = var_range / np.max(phased_signal)
     max_values, peaks, min_values, troughs = local_peaks(phased_signal, nc_signal)
-    peak_profile = [0] * window
+    peak_profile = np.zeros(window, dtype=int)
     for peak_index in range(window):
         if peak_index in peaks:
             peak_profile[peak_index] = 1
@@ -252,14 +252,14 @@ def generate_profile(region, params):
             peak_profile[peak_index] = -1
     if window is not None:
         # assume minimum, then double-check
-        inflection = min(phased_signal[int(window/2 - 73):int(window/2 + 73)])
+        inflection = np.min(phased_signal[int(window/2 - 73):int(window/2 + 73)])
         inflection_loc = np.where(phased_signal == inflection)
         if len(inflection_loc) > 1:
             inflection_loc = np.absolute(inflection_loc - window/2).argmin()[0]  # closest inflection to 0
         else:
             inflection_loc = inflection_loc[0][0]
         if phased_signal[inflection_loc - 3] < inflection or phased_signal[inflection_loc + 3] < inflection:  # not min
-            inflection = max(phased_signal[int(window/2 - 73):int(window/2 + 73)])
+            inflection = np.max(phased_signal[int(window/2 - 73):int(window/2 + 73)])
             inflection_loc = np.where(phased_signal == inflection)
             if len(inflection_loc) > 1:
                 inflection_loc = np.absolute(inflection_loc - window / 2).argmax()[0]
@@ -276,7 +276,9 @@ def generate_profile(region, params):
                 peak_profile[left_max_loc] = -2
                 peak_profile[right_max_loc] = 2
                 left_max, right_max = phased_signal[left_max_loc], phased_signal[right_max_loc]
-                flank_diff = right_max / left_max
+                if left_max > 0:
+                    flank_diff = right_max / left_max
+                else: flank_diff = np.nan
                 minus_one_loc, plus_one_loc = left_max_loc - inflection_loc, right_max_loc - inflection_loc
             else:
                 flank_diff, minus_one_loc, plus_one_loc = np.nan, np.nan, np.nan
@@ -285,7 +287,7 @@ def generate_profile(region, params):
     else:
         cd_mean, flank_diff, minus_one_loc, plus_one_loc, inflection_loc, inflection_het =\
             np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-    if len(max_values) < 1:
+    if len(max_values) < 1 or len(peaks) < 2:
         np_period = np.nan
         np_amp = np.nan
     else:
@@ -301,11 +303,11 @@ def generate_profile(region, params):
     shan_profile = point_entropy(roi_fragment_lengths, fragment_length_profile)
     ratio_profile = [frag_ratio(point_frags) for point_frags in fragment_length_profile]
     mf_profile = [np.mean(point_frags) if len(point_frags) > 0 else np.nan for point_frags in fragment_length_profile]
-    mad_profile = [np.median(np.absolute(point_frags - np.median(point_frags)))
+    mad_profile = [np.median(np.absolute(point_frags - np.median(point_frags))) if len(point_frags) != 0 else np.nan
                    for point_frags in fragment_length_profile]
-    hetero_profile = [len(set(point_frags)) / len(point_frags) if len(point_frags) != 0 else 0 for point_frags in
-                      fragment_length_profile]
-    if not np.isnan(inflection_loc):
+    hetero_profile = [len(set(point_frags)) / len(point_frags) if len(point_frags) != 0 else 0
+                      for point_frags in fragment_length_profile]
+    if not np.isnan(inflection_loc) and np.mean(hetero_profile) > 0:
         inflection_het = np.mean(hetero_profile[(inflection_loc - 5):(inflection_loc + 5)]) / np.mean(hetero_profile)
     else:
         inflection_het = np.nan
@@ -452,7 +454,7 @@ def main():
         pos_idx = header.index('position')
     elif window:
         print('No "position" column found in BED file(s): defaulting to index 6 (' + header[6] + ')')
-    random.shuffle(sites)  # to spread sites evenly between cores given variable size
+    # random.shuffle(sites)  # to spread sites evenly between cores given variable size
 
     with open(dict_path, 'rb') as f:
         frag_dict = pickle.load(f)
@@ -466,6 +468,12 @@ def main():
 
     with Pool(cpus) as pool:
         results = list(pool.imap_unordered(partial(generate_profile, params=params), sites, len(sites) // cpus))
+
+    # below is for running !parallel (testing)
+    # results = []
+    # for site in sites:
+    #     print(site.split('\t')[3])
+    #     results += generate_profile(site, params)
 
     print('Merging and saving results . . .')
     signal_dict = {}

@@ -288,8 +288,8 @@ def main():
 
     ####################################################################################################################
     # constants which should be passed in the future
-    targets = ['HD', 'ARPC', 'NEPC', 'Basal', 'Patient']
-    colors = ['#009988', '#0077BB', '#CC3311', '#EE3377', '#BBBBBB']
+    targets = ['HD', 'ARPC', 'NEPC', 'Basal', 'Patient', '+', '-']
+    colors = ['#009988', '#0077BB', '#CC3311', '#EE3377', '#BBBBBB', 'red', 'blue']
     palette = {targets[i]: colors[i] for i in range(len(targets))}
     ####################################################################################################################
 
@@ -325,7 +325,8 @@ def main():
         tests_data = [np.load(path) for path in input_path]
         for site in tests_data[0].files:
             if sites_path is None or site in sites:
-                dfs = [pd.DataFrame(test_data[site], columns=cols) for test_data in tests_data]
+                dfs = [pd.DataFrame(test_data[site], columns=cols)
+                       for test_data in tests_data if len(test_data[site].shape) == 2]
                 for tdf, sample in zip(dfs, samples):
                     tdf['loc'] = np.arange(len(tdf))
                     if window:
@@ -335,7 +336,11 @@ def main():
                         tdf['subtype'] = categories[sample]
                     for col in norm_cols:
                         tdf[col] = normalize_data(tdf[col])
+                if len(dfs) < 2:
+                    continue
                 df = pd.concat(dfs)
+                df = df[df['subtype'] != 'ARlow']
+                df = df[df['subtype'] != 'NA']
                 if categories is not None:
                     df = pd.melt(df, id_vars=['sample', 'loc', 'subtype'], value_vars=cols, var_name='profile')
                 else:
