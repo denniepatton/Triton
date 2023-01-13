@@ -45,7 +45,7 @@ Triton region-level features are output as a .tsv file and include:
     np-amplitude: phased-nucleosome mean amplitude  
         ##Region-level features (profile-based)##  
     mean-depth: mean depth in the region (GC-corrected, if provided)  
-    var-ratio: ratio of variation to constant noise in the phased signal  
+    var-ratio: fraction of variability in the phased signal  
     plus-one-pos*: location relative to central-loc of plus-one nucleosome  
     minus-one-pos*: location relative to central-loc of minus-one nucleosome  
     plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome  
