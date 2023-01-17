@@ -13,7 +13,7 @@ for GC correction. Fast Fourier Transforms are then used to isolate well-phased 
 
 ### Outputs
 
-Triton profiles are output as a NumPy compressed file (.npz), one for each sample, containing one object for each queried (composite) site.
+Triton profiles are output as a NumPy compressed files (.npz), one for each sample, containing one object for each queried (composite) site.
 Nucleotide-resolution profiles include:
 
     1: Depth (GC-corrected, if provided)  
@@ -57,8 +57,6 @@ Triton region-level features are output as a .tsv file and include:
 \** sequence is based on the reference, not the reads  
 \*** minus-one, plus-one, and inflection locs are only called if window != None, and supersede peak/trough
 
-### Examples
-
 ### Uses
 
 Triton may be used either as an end point in cfDNA data analysis by outputting ready-to-use features from a given list of regions or
@@ -77,32 +75,32 @@ Triton may be used as a local Python package, incoporated directly into scripts,
 See below for usage details:
 
 ### Inputs to Triton.py:
--n, --sample_name               : sample identifier (string)
--i, --input                     : input .bam file (path)
--b, --bias (*optional*)         : input-matched .GC_bias file (path, from Griffin†)
--a, --annotation                : regions of interest as a BED file or text file containing a list of BED file paths
-                                  *if "composite" and/or "window" is specified, the BED must contain an additional  "position" column
-                                  which will be treated as the center for aligning composite regions and defining windows*
--g, --reference_genome          : reference genome .fa file (path)
--r, --results_dir               : directory for output (path)
--q, --map_quality (*optional*)  : minimum read mapping quality to keep (int, default=20)
--f, --size_range (*optional*)   : fragment size range in bp to keep (int tuple, default=(15, 500))
--c, --cpus                      : number of CPUs to use for parallel processing of regions (int)
--w, --window (*optional*)       : size of window to use in bp; required for composite (int, default=2000)
--s, --composite (*optional*)    : whether to run in composite mode, treating each line of the annotation as a distinct list of regions
-                                  to overlap, or single mode, in which case the annotation should be a single BED file with each line
-                                  as a distinct region (bool, default=False)
--d, frag_dict                   : dictionary of probable nucleosome center locations (displacements within fragments) for given fragment
-                                  lengths, as a Python binary .pkl file. Triton ships wth a pre-computed dictionary in nc_info/NCDict.pkl,
-                                  which is called by default. See nc_info for details.
+-n, --sample_name               : sample identifier (string)  
+-i, --input                     : input .bam file (path)  
+-b, --bias (*optional*)         : input-matched .GC_bias file (path, from Griffin†)  
+-a, --annotation                : regions of interest as a BED file or text file containing a list of BED file paths  
+                                  *if "composite" and/or "window" is specified, the BED must contain an additional  "position" column  
+                                  which will be treated as the center for aligning composite regions and defining windows*  
+-g, --reference_genome          : reference genome .fa file (path)  
+-r, --results_dir               : directory for output (path)  
+-q, --map_quality (*optional*)  : minimum read mapping quality to keep (int, default=20)  
+-f, --size_range (*optional*)   : fragment size range in bp to keep (int tuple, default=(15, 500))  
+-c, --cpus                      : number of CPUs to use for parallel processing of regions (int)  
+-w, --window (*optional*)       : size of window to use in bp; required for composite (int, default=2000)  
+-s, --composite (*optional*)    : whether to run in composite mode, treating each line of the annotation as a distinct list of regions  
+                                  to overlap, or single mode, in which case the annotation should be a single BED file with each line  
+                                  as a distinct region (bool, default=False)  
+-d, frag_dict                   : dictionary of probable nucleosome center locations (displacements within fragments) for given fragment  
+                                  lengths, as a Python binary .pkl file. Triton ships wth a pre-computed dictionary in nc_info/NCDict.pkl,  
+                                  which is called by default. See nc_info for details.  
 
 ### Contained Scripts:
-Triton.py | primary script containing the generate_profile() function; takes in inputs and produces outputs
-triton_helpers.py | contains helper functions called by Triton.py
-triton_cleanup.py | combines TritonFeatures.tsv output files produced by Triton when run on multiple samples; called by Snakemake
-triton_plotters.py | plotting utils and functions for TritonProfiles.npz files; use at your own discretion or modify as you see fit!
-nc_dist.py | a modified version of Triton.py for generating composite nucleosome-center profiles; see nc_info
-nc_plot.py | used after nc_dist.py to create the frag_dict and plot results
+Triton.py | primary script containing the generate_profile() function; takes in inputs and produces outputs  
+triton_helpers.py | contains helper functions called by Triton.py  
+triton_cleanup.py | combines TritonFeatures.tsv output files produced by Triton when run on multiple samples; called by Snakemake  
+triton_plotters.py | plotting utils and functions for TritonProfiles.npz files; use at your own discretion or modify as you see fit!  
+nc_dist.py | a modified version of Triton.py for generating composite nucleosome-center profiles; see nc_info  
+nc_plot.py | used after nc_dist.py to create the frag_dict and plot results  
 
 ### nc_info
 Rather than throw away information about fragment length (e.g. by only using fragment centers or ends), Triton attempts to
@@ -114,10 +112,10 @@ high-confidence sites, using a cohort of healthy donor cfDNA from blood. The res
 of fragment length vs displacement of fragment center from nucleosome center values, renormalized, so that the "weight" of each
 fragment contributing to the nucleosome center profile is adjusted at each position.
 
-In general, the results of this analysis dictate that short fragments (~150-2210 bp) generally have centers coinciding with nucleosomes,
+In general, the results of this analysis dictate that short fragments (~150-210 bp) generally have centers coinciding with nucleosomes,
 while longer fragments tend to bind nucleosome asymmetrically nearer to one end. A visualization of this phenomenon can be found in nc_info.
 
-If the user would like to re-generate NCDict.pkl with their own site list of samples, please modify nc_dist.py and nc_plot.py as needed
+If the user would like to re-generate NCDict.pkl with their own site list or samples, please modify nc_dist.py and nc_plot.py as needed
 and overwrite the default NCDict.pkl in future runs.
 
 The BED file used, derived from NucMap, is also available: nc_info/hsNuc_iNPSPeak_bedops-intersect.bed
@@ -126,19 +124,19 @@ The BED file used, derived from NucMap, is also available: nc_info/hsNuc_iNPSPea
 
 Ensure the following files are up-to-date for your system and needs (defaulty values for Fred Hutch systems are included)
 
-config/config.yaml: specify inputs as detailed above, and ensure the annotation and cluster_slurm paths are correct
-config/cluster_slurm.yaml: specify computational resources for your system
-config/samples.yaml: see example_samples.yaml for formatting; also output by default by Griffin GC correction
+config/config.yaml: specify inputs as detailed above, and ensure the annotation and cluster_slurm paths are correct  
+config/cluster_slurm.yaml: specify computational resources for your system  
+config/samples.yaml: see example_samples.yaml for formatting; also output by default by Griffin GC correction  
 
 Ensure the Python environment meets the requirements found in pythonversion.txt and requirements.txt; if you are on a Fred Hutch
 server load the modules indicated at the head of Triton.snakefile
 
-Run the following command to validate, then remove "-np" at the end to initiate:
+Run the following command to validate, then remove "-np" at the end to initiate:  
 snakemake -s Triton.snakefile --latency-wait 60 --keep-going --cluster-config config/cluster_slurm.yaml --cluster "sbatch -p {cluster.partition} --mem={cluster.mem} -t {cluster.time} -c {cluster.ncpus} -n {cluster.ntasks} -o {cluster.output} -J {cluster.JobName}" -j 40 -np
 
 ### TO INSTALL AS A PACKAGE
 
-In the repo's main directory, run:
+In the repo's main directory, run:  
 pip install .
 
 Triton's primary function generate_profile() may now be imported directly into scripts, as well as helper functions.
@@ -156,7 +154,7 @@ Triton is developed and maintained by Robert D. Patton in the Gavin Ha Lab, Fred
 Anna-Lisa Doebley provided critical input and developed the GC-correction process used in Triton, originally found
 in the Griffin (<https://github.com/GavinHaLab/Griffin>) pipeline.
 
-† Griffin-based GC correction
+† Griffin-based GC correction  
 Triton optionally takes BAM-matched GC bias data produced by the Griffin workflow; the workflow with instructions for generating bias files can be
 found at (<https://github.com/GavinHaLab/Griffin>) (when used in the snakemake as opposed to a stand-alone tool GC bias is required).
 
