@@ -103,12 +103,12 @@ nc_dist.py | a modified version of Triton.py for generating composite nucleosome
 nc_plot.py | used after nc_dist.py to create the frag_dict and plot results  
 
 ### nc_info
-Rather than throw away information about fragment length (e.g. by only using fragment centers or ends), Triton attempts to
+Rather than exclude information about fragment length when producing nucleosome coverage signals, Triton attempts to
 quantify the most probable nucleosome central coverage empirically when evaluating "nucleosome center profile" (signal output 3).
 To this end "stable, tissue-independent" nucleosome positioning was garnered from NucMap (<https://ngdc.cncb.ac.cn/nucmap/>) by
 overlapping 50 human iNPS peak datasets from a variety of tissue types and cell lines (<https://doi.org/10.1038/ncomms5909>)
 against each other, keeping only regions represented in all samples. Triton (as nc_dist.py) was then run on the 186 remaining
-high-confidence sites, using a cohort of healthy donor cfDNA from blood. The resulting nc_info/NCDict.pkl represents a matrix
+high-confidence sites, using a cohort of healthy donor cfDNA from blood plasma. The resulting nc_info/NCDict.pkl represents a matrix
 of fragment length vs displacement of fragment center from nucleosome center values, renormalized, so that the "weight" of each
 fragment contributing to the nucleosome center profile is adjusted at each position.
 
