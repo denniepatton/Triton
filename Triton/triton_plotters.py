@@ -46,7 +46,7 @@ def plot_all_profiles(name, data, palette=None):
         df = data[data['profile'] == 'depth']
         ax1.fill_between(data=df, x='loc', y1=0, y2='value', color='silver', label='GC-Corrected Coverage')
         ax1.set_xlim(xmin, xmax)
-        ax1.set_ylim(df['value'].min() / 1.1, df['value'].max() * 1.1)
+        ax1.set_ylim(df['value'].min(), df['value'].max() + (df['value'].max() - df['value'].min()) / 20)
         ax1.set_ylabel('depth', fontsize=12)
         ax1.set_xticks([])
         # 2: Phased-Nucleosomes Signal and P.N.C. Coverage
@@ -54,12 +54,12 @@ def plot_all_profiles(name, data, palette=None):
         ax2.fill_between(data=df, x='loc', y1=0, y2='value', color='gray', label='P.N.C. Coverage (GC-C)')
         ax2.set_xlim(xmin, xmax)
         ax2.set_xticks([])
+        ymin_2, ymax_2 = df['value'].min(), df['value'].max() + (df['value'].max() - df['value'].min()) / 20
         df = data[data['profile'] == 'phased-signal']
         signal = df['value'].tolist()
         index_shift = df['loc'].min() / -1
         sns.lineplot(data=df, x='loc', y='value', color='darkviolet', label='Phased-Nucleosome Signal',
                      lw=3, alpha=0.7, ax=ax2, legend=False)
-        ymin_2, ymax_2 = df['value'].min() * 0.8, df['value'].max() * 1.2
         ax2.set_ylim(ymin_2, ymax_2)
         df_peaks = data[data['profile'] == 'peaks']
         peak_locs = df_peaks.loc[df_peaks['value'] == 1, 'loc'].tolist()
@@ -256,6 +256,115 @@ def plot_signal_profile(name, data, palette=None, show_mpc=False):
         return
 
 
+def plot_dhs_profiles(name, data, palette=None, show_mpc=False):
+    """
+    Plots depth, nucleosome signal, and heterogeneity signal
+        Parameters:
+            name (string): name of site being plotted
+            data (pandas long df): signal profile(s) from Triton
+            palette (target:color dictionary): palette for subtypes if categories is passed
+            show_mpc (bool): whether to plot +/- 1 stdev lines for minus-one, plus-one, and inflection locations
+    """
+    xmin, xmax = data['loc'].min(), data['loc'].max() + 1
+    if data['sample'].nunique() == 1:
+        fig, (ax1, ax2, ax5) = plt.subplots(3, figsize=(11, 8))
+        sample_name = data['sample'][0]
+        # 1: GC-Corrected Coverage
+        df = data[data['profile'] == 'depth']
+        ax1.fill_between(data=df, x='loc', y1=0, y2='value', color='silver', label='GC-Corrected Coverage')
+        ax1.set_xlim(xmin, xmax)
+        ax1.set_ylim(df['value'].min() / 1.1, df['value'].max() * 1.1)
+        ax1.set_ylabel('depth', fontsize=12)
+        ax1.set_xticks([])
+        # 2: Phased-Nucleosomes Signal and P.N.C. Coverage
+        df = data[data['profile'] == 'nuc-centers']
+        ax2.fill_between(data=df, x='loc', y1=0, y2='value', color='gray', label='P.N.C. Coverage (GC-C)')
+        ax2.set_xlim(xmin, xmax)
+        ax2.set_xticks([])
+        df = data[data['profile'] == 'phased-signal']
+        signal = df['value'].tolist()
+        index_shift = df['loc'].min() / -1
+        sns.lineplot(data=df, x='loc', y='value', color='darkviolet', label='Phased-Nucleosome Signal',
+                     lw=3, alpha=0.7, ax=ax2, legend=False)
+        ymin_2, ymax_2 = df['value'].min() * 0.8, df['value'].max() * 1.2
+        ax2.set_ylim(ymin_2, ymax_2)
+        df_peaks = data[data['profile'] == 'peaks']
+        peak_locs = df_peaks.loc[df_peaks['value'] == 1, 'loc'].tolist()
+        trough_locs = df_peaks.loc[df_peaks['value'] == -1, 'loc'].tolist()
+        ax2.vlines(x=peak_locs, ymin=[signal[int(i + index_shift)] for i in peak_locs], ymax=ymax_2,
+                   linestyle='dashed', linewidth=1)
+        ax2.vlines(x=trough_locs, ymin=ymin_2, ymax=[signal[int(i + index_shift)] for i in trough_locs],
+                   linestyle='dashed', linewidth=1)
+        minus_loc = int(df_peaks.loc[df_peaks['value'] == -2, 'loc'])
+        plus_loc = int(df_peaks.loc[df_peaks['value'] == 2, 'loc'])
+        if minus_loc and plus_loc:
+            ax2.vlines(x=[minus_loc, plus_loc], ymin=[signal[int(i + index_shift)] for i in [minus_loc, plus_loc]],
+                       ymax=ymax_2, color='orange', linewidth=1)
+        inflection_loc = int(df_peaks.loc[df_peaks['value'] == 3, 'loc'])
+        if inflection_loc:
+            ax2.vlines(x=inflection_loc, ymin=ymin_2, ymax=ymax_2, color='red', linewidth=1)
+        ax2.set_ylabel('signal', fontsize=12)
+        # 5: Fragment Heterogeneity (unique/total)
+        df = data[data['profile'] == 'frag-hetero']
+        ax5.fill_between(data=df, x='loc', y1=0, y2='value', color='blue', alpha=0.5)
+        ax5.set_xlim(xmin, xmax)
+        ax5.set_ylim(df['value'].min(), df['value'].max() + (df['value'].max() - df['value'].min()) / 20)
+        ax5.set_xticks([])
+        sns.lineplot(data=df, x='loc', y='value', color='blue', label='Fragment Heterogeneity (unique/total)',
+                     ax=ax5, legend=False)
+        ax5.axvspan(inflection_loc - 5, inflection_loc + 5, alpha=0.2, color='red')
+        ax5.set_ylabel('ratio', fontsize=12)
+        lines, labels = [], []
+        for ax in fig.axes:
+            ax_line, ax_label = ax.get_legend_handles_labels()
+            lines.extend(ax_line)
+            labels.extend(ax_label)
+        fig.legend(lines, labels, title_fontsize=18, loc='upper left', bbox_to_anchor=(1.0, 1.0))
+        ax1.set_title(sample_name + ' ' + name + ' profiles (normalized to mean = 1)')
+        plt.tight_layout()
+        fig.savefig(sample_name + '_' + name + '_DHSProfiles.pdf', bbox_inches="tight")
+        plt.close()
+        return
+    else:
+        df_peaks = data[data['profile'] == 'peaks']
+        data = data[~data['profile'].isin([['nuc-centers', 'frag-mean', 'frag-ent', 'frag-mad', 'frag-ratio',
+                                            'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']])]
+        sample_name = 'MultiSample'
+        if 'subtype' in data:
+            hue = 'subtype'
+        else:
+            hue = 'sample'
+        if palette is not None:
+            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=1.14, aspect=11, palette=palette,
+                                sharey=False, legend_out=True)
+        else:
+            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=1.14, aspect=11, sharey=False,
+                                legend_out=True)
+        sea.map(sns.lineplot, 'loc', 'value', alpha=0.8, legend='full', n_boot=100)
+        sea.add_legend()
+        if 'subtype' in data:
+            ax = sea.axes.flatten()[1]
+            for subtype in data['subtype'].unique():
+                sub_df = df_peaks[df_peaks['subtype'] == subtype]
+                minus_locs = sub_df.loc[sub_df['value'] == -2, 'loc'].values
+                plus_locs = sub_df.loc[sub_df['value'] == 2, 'loc'].values
+                inflect_locs = sub_df.loc[sub_df['value'] == 3, 'loc'].values
+                if minus_locs.any() and plus_locs.any() and inflect_locs.any():
+                    m_mean, m_std = np.mean(minus_locs), np.std(minus_locs)
+                    p_mean, p_std = np.mean(plus_locs), np.std(plus_locs)
+                    i_mean, i_std = np.mean(inflect_locs), np.std(inflect_locs)
+                    ax.axvspan(m_mean - m_std, m_mean + m_std, alpha=0.1, color=palette[subtype])
+                    ax.axvline(x=m_mean, alpha=0.6, color=palette[subtype])
+                    ax.axvspan(p_mean - p_std, p_mean + p_std, alpha=0.1, color=palette[subtype])
+                    ax.axvline(x=p_mean, alpha=0.6, color=palette[subtype])
+                    ax.axvspan(i_mean - i_std, i_mean + i_std, alpha=0.1, color=palette[subtype])
+                    ax.axvline(x=i_mean, alpha=0.6, color=palette[subtype])
+        sea.set(xlim=(xmin, xmax))
+        plt.savefig(sample_name + '_' + name + '_DHSProfiles.pdf', bbox_inches="tight")
+        plt.close()
+        return
+
+
 def normalize_data(data):
     mean_val = np.mean(data)
     if mean_val == 0:
@@ -264,34 +373,48 @@ def normalize_data(data):
         return data / mean_val
 
 
+# TODO: take in ..Profiles.npz and profiles.tsv, detect, open differently
 # below is for a non-issue iterating through "files"
 # noinspection PyUnresolvedReferences
 def main():
     parser = argparse.ArgumentParser(description='\n### triton_plotters.py ### plots Triton output profiles')
-    parser.add_argument('-i', '--input', help='one or more TritonProfiles.npz files', nargs='*', required=True)
-    parser.add_argument('-m', '--mode', help='plotting mode (all: all profiles, signal: only signal profile)',
-                        required=False, default='signal')
-    parser.add_argument('-c', '--categories', help='tsv file containing matched sample names (column "sample") and '
-                                                   'categories (column "subtype"/"category") to color samples by '
-                                                   'category rather than individually', required=False, default=None)
-    parser.add_argument('-s', '--sites', help='file containing a list (row-wise) of sites to plot; defaults to plotting'
-                                              'all sites', required=False, default=None)
-    parser.add_argument('-w', '--window', help='if set, data is "windowed" - set 0-point to the middle instead of the'
+    parser.add_argument('-i', '--input', help='one or more TritonProfiles.npz/.tsv files; wildcards (e.g. '
+                                              'results/*.npz) are OK.', nargs='*', required=True)
+    parser.add_argument('-m', '--mode', help='plotting mode (all: all profiles, signal: only smoothed signal profile,'
+                                             ' DSH: raw depth, signal, and heterogeneity profiles). DEFAULT = DHS',
+                        required=False, default='DHA')
+    parser.add_argument('-c', '--categories', help='tsv file containing matched sample names (column 1) and '
+                                                   'categories (column 2) to color samples by composite '
+                                                   'categories rather than individually, with a .95 confidence '
+                                                   'interval; sample names in column 1 MUST match the sample '
+                                                   'names passed to Triton (i.e. sample1_TritonProfiles.npz). '
+                                                   'Any passed inputs not present in this file will be dropped. '
+                                                   'This file should NOT contain a header. DEFAULT = None (plot '
+                                                   'all samples individually)',
+                        required=False, default=None)
+    parser.add_argument('-p', '--palette', help='tsv file containing matched categories/samples (column 1) and HEX '
+                                                'color codes (column 2, e.g. #0077BB) to specify what color to use '
+                                                'for samples/categories. Sample/category names must exactly match '
+                                                'sample names passed to Triton, or category names passed with the '
+                                                '-c/--categories option. Will error if inputs/categories include '
+                                                'labels not present in palette.This file should NOT contain a header. '
+                                                'DEFAULT = None (use Seaborn default colors)',
+                        required=False, default=None)
+    parser.add_argument('-s', '--sites', help='file containing a list (row-wise) of sites to plot. This file should '
+                                              'NOT contain a header. DEFAULT = None (plotting all available sites).',
+                        required=False, default=None)
+    parser.add_argument('-w', '--window', help='if set, data is "windowed" - set 0-point to the middle instead of the　'
                                                '5\' end', action='store_true')
 
     args = parser.parse_args()
     input_path = args.input
     plot_mode = args.mode
     categories = args.categories
+    palette_file = args.palette
     sites_path = args.sites
     window = args.window
 
-    ####################################################################################################################
-    # constants which should be passed in the future
-    targets = ['HD', 'ARPC', 'NEPC', 'Basal', 'Patient', '+', '-']
-    colors = ['#009988', '#0077BB', '#CC3311', '#EE3377', '#BBBBBB', 'red', 'blue']
-    palette = {targets[i]: colors[i] for i in range(len(targets))}
-    ####################################################################################################################
+    print('### Running triton_plotters.py in ' + plot_mode + ' mode, ')
 
     if categories is not None:
         categories = pd.read_table(categories, sep='\t', header=None)
@@ -301,6 +424,11 @@ def main():
         with open(sites_path) as f:
             sites = f.read().splitlines()
 
+    if palette_file is not None:
+        palette_file = pd.read_table('/fh/fast/ha_g/user/rpatton/references/palette.tsv', sep='\t', header=None)
+        palette = dict(palette_file.itertuples(False, None))
+    else:
+        palette = None
     if len(input_path) == 1:  # individual sample
         test_data = np.load(input_path[0])
         sample = os.path.basename(input_path[0]).split('_TritonProfiles.npz')[0]
@@ -316,10 +444,13 @@ def main():
                 if categories is not None:
                     print('### categories specified but running in single-sample mode - ignoring categories')
                 df = pd.melt(df, id_vars=['sample', 'loc'], value_vars=cols, var_name='profile')
+                print('Plotting: ')
                 if plot_mode == 'all':
                     plot_all_profiles(site, df, palette=palette)
-                else:
+                elif plot_mode == 'signal':
                     plot_signal_profile(site, df, palette=palette)
+                else:
+                    plot_dhs_profiles(site, df, palette=palette)
     else:  # multiple samples:
         samples = [os.path.basename(path).split('_TritonProfiles.npz')[0] for path in input_path]
         tests_data = [np.load(path) for path in input_path]
@@ -339,16 +470,16 @@ def main():
                 if len(dfs) < 2:
                     continue
                 df = pd.concat(dfs)
-                df = df[df['subtype'] != 'ARlow']
-                df = df[df['subtype'] != 'NA']
                 if categories is not None:
                     df = pd.melt(df, id_vars=['sample', 'loc', 'subtype'], value_vars=cols, var_name='profile')
                 else:
                     df = pd.melt(df, id_vars=['sample', 'loc'], value_vars=cols, var_name='profile')
                 if plot_mode == 'all':
                     plot_all_profiles(site, df, palette=palette)
-                else:
+                elif plot_mode == 'signal':
                     plot_signal_profile(site, df, palette=palette)
+                else:
+                    plot_dhs_profiles(site, df, palette=palette)
 
 
 if __name__ == "__main__":
