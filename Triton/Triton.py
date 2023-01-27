@@ -93,6 +93,8 @@ def generate_profile(region, params):
                 if start_pos < 0: continue
                 segment_reads = bam.fetch(chrom, start_pos, stop_pos)
                 window_sequence = ref_seq.fetch(chrom, start_pos + 500, stop_pos - 500).upper()
+                if len(window_sequence) != window:  # truncated reference region: skip
+                    continue
                 if strand == '+': oh_seq = np.add(oh_seq, one_hot_encode(window_sequence))
                 else: oh_seq = np.add(oh_seq, one_hot_encode(window_sequence[::-1]))
                 for read in segment_reads:
@@ -211,7 +213,7 @@ def generate_profile(region, params):
             fragment_length_profile = fragment_length_profile[::-1]
             nc_signal = nc_signal[::-1]
     # generate phased profile and phasing/region-level features --------------------------------------------------------
-    if np.count_nonzero(depth) < 0.9 * roi_length:  # skip sites with less than 50% base coverage
+    if np.count_nonzero(depth) < 0.9 * roi_length:  # skip sites with less than 90% base coverage
         return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
                np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
     mean_depth = np.mean(depth[500:-500])
@@ -225,12 +227,11 @@ def generate_profile(region, params):
         np_score = primary_amp_2 / primary_amp_1
     else:
         np_score = np.nan
-    test_freqs = [idx for idx, val in enumerate(freqs) if 0 < val <= freq_max]  # frequencies in filter
-    clean_fft = np.zeros(len(fourier) + 1, dtype='complex_')
+    drop_freqs = [idx for idx, val in enumerate(freqs) if val > freq_max]  # frequencies to filter out
     try:
-        clean_fft[test_freqs[0]:test_freqs[-1]] = fourier[test_freqs[0]:test_freqs[-1]]
-        inverse_signal = irfft(clean_fft, n=roi_length)  # reconstruct signal
-        phased_signal = inverse_signal + len(inverse_signal) * np.mean(nc_signal[500:-500])  # add in base component
+        fourier[drop_freqs] = 0  # this fourier transform is now scrubbed of high frequencies
+        inverse_signal = irfft(fourier, n=roi_length)
+        phased_signal = inverse_signal + np.mean(nc_signal[500:-500])  # add in base component
     except IndexError:  # not enough data to construct a reasonable Fourier
         phased_signal = np.zeros(roi_length)
     # remove the 500 bp buffer from each side of the signal
@@ -472,8 +473,7 @@ def main():
     # below is for running !parallel (testing)
     # results = []
     # for site in sites:
-    #     print(site.split('\t')[3])
-    #     results += generate_profile(site, params)
+    #     results += [generate_profile(site, params)]
 
     print('Merging and saving results . . .')
     signal_dict = {}
