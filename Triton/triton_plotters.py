@@ -40,7 +40,7 @@ def plot_all_profiles(name, data, palette=None):
     """
     xmin, xmax = data['loc'].min(), data['loc'].max() + 1
     if data['sample'].nunique() == 1:
-        fig, (ax1, ax2, ax3, ax4, ax5, ax6, ax7) = plt.subplots(7, figsize=(11, 8))
+        fig, (ax1, ax2, ax3, ax4, ax5, ax6, ax7) = plt.subplots(7, figsize=(12, 12))
         sample_name = data['sample'][0]
         # 1: GC-Corrected Coverage
         df = data[data['profile'] == 'depth']
@@ -68,13 +68,13 @@ def plot_all_profiles(name, data, palette=None):
                    linestyle='dashed', linewidth=1)
         ax2.vlines(x=trough_locs, ymin=ymin_2, ymax=[signal[int(i + index_shift)] for i in trough_locs],
                    linestyle='dashed', linewidth=1)
-        minus_loc = int(df_peaks.loc[df_peaks['value'] == -2, 'loc'])
-        plus_loc = int(df_peaks.loc[df_peaks['value'] == 2, 'loc'])
-        if minus_loc and plus_loc:
+        if len(df_peaks.loc[df_peaks['value'] == -2, 'loc']) and len(df_peaks.loc[df_peaks['value'] == 2, 'loc']) > 0:
+            minus_loc = int(df_peaks.loc[df_peaks['value'] == -2, 'loc'])
+            plus_loc = int(df_peaks.loc[df_peaks['value'] == 2, 'loc'])
             ax2.vlines(x=[minus_loc, plus_loc], ymin=[signal[int(i + index_shift)] for i in [minus_loc, plus_loc]],
                        ymax=ymax_2, color='orange', linewidth=1)
-        inflection_loc = int(df_peaks.loc[df_peaks['value'] == 3, 'loc'])
-        if inflection_loc:
+        if len(df_peaks.loc[df_peaks['value'] == 3, 'loc']) > 0:
+            inflection_loc = int(df_peaks.loc[df_peaks['value'] == 3, 'loc'])
             ax2.vlines(x=inflection_loc, ymin=ymin_2, ymax=ymax_2, color='red', linewidth=1)
         ax2.set_ylabel('signal', fontsize=12)
         # 3: Fragment Mean
@@ -102,7 +102,8 @@ def plot_all_profiles(name, data, palette=None):
         ax5.set_xticks([])
         sns.lineplot(data=df, x='loc', y='value', color='blue', label='Fragment Heterogeneity (unique/total)',
                      ax=ax5, legend=False)
-        ax5.axvspan(inflection_loc - 5, inflection_loc + 5, alpha=0.2, color='red')
+        if len(df_peaks.loc[df_peaks['value'] == 3, 'loc']) > 0:
+            ax5.axvspan(inflection_loc - 5, inflection_loc + 5, alpha=0.2, color='red')
         ax5.set_ylabel('ratio', fontsize=12)
         # 6: Fragment MAD
         df = data[data['profile'] == 'frag-mad']
@@ -142,10 +143,10 @@ def plot_all_profiles(name, data, palette=None):
         else:
             hue = 'sample'
         if palette is not None:
-            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=1.14, aspect=11, palette=palette,
+            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=2, aspect=4, palette=palette,
                                 sharey=False, legend_out=True)
         else:
-            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=1.14, aspect=11, sharey=False,
+            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=2, aspect=4, sharey=False,
                                 legend_out=True)
         sea.map(sns.lineplot, 'loc', 'value', alpha=0.8, legend='full', n_boot=100)
         sea.add_legend()
@@ -188,12 +189,12 @@ def plot_signal_profile(name, data, palette=None, show_mpc=False):
         df = data[data['profile'] == 'nuc-centers']
         plt.fill_between(data=df, x='loc', y1=0, y2='value', color='gray', label='P.N.C. Coverage (GC-C)')
         plt.xlim(xmin, xmax)
+        ymin_2, ymax_2 = df['value'].min(), df['value'].max() + (df['value'].max() - df['value'].min()) / 20
         df = data[data['profile'] == 'phased-signal']
         signal = df['value'].tolist()
         index_shift = df['loc'].min() / -1
         sns.lineplot(data=df, x='loc', y='value', color='darkviolet', label='Phased-Nucleosome Signal',
                      lw=3, alpha=0.7, legend=False)
-        ymin_2, ymax_2 = df['value'].min() * 0.8, df['value'].max() * 1.2
         plt.ylim(ymin_2, ymax_2)
         df_peaks = data[data['profile'] == 'peaks']
         peak_locs = df_peaks.loc[df_peaks['value'] == 1, 'loc'].tolist()
@@ -219,7 +220,7 @@ def plot_signal_profile(name, data, palette=None, show_mpc=False):
         return
     else:
         df_peaks = data[data['profile'] == 'peaks']
-        data = data[data['profile'] == 'nuc-centers']
+        data = data[data['profile'] == 'phased-signal']
         sample_name = 'MultiSample'
         if 'subtype' in data:
             hue = 'subtype'
@@ -273,7 +274,7 @@ def plot_dhs_profiles(name, data, palette=None, show_mpc=False):
         df = data[data['profile'] == 'depth']
         ax1.fill_between(data=df, x='loc', y1=0, y2='value', color='silver', label='GC-Corrected Coverage')
         ax1.set_xlim(xmin, xmax)
-        ax1.set_ylim(df['value'].min() / 1.1, df['value'].max() * 1.1)
+        ax1.set_ylim(df['value'].min(), df['value'].max() + (df['value'].max() - df['value'].min()) / 20)
         ax1.set_ylabel('depth', fontsize=12)
         ax1.set_xticks([])
         # 2: Phased-Nucleosomes Signal and P.N.C. Coverage
@@ -281,12 +282,12 @@ def plot_dhs_profiles(name, data, palette=None, show_mpc=False):
         ax2.fill_between(data=df, x='loc', y1=0, y2='value', color='gray', label='P.N.C. Coverage (GC-C)')
         ax2.set_xlim(xmin, xmax)
         ax2.set_xticks([])
+        ymin_2, ymax_2 = df['value'].min(), df['value'].max() + (df['value'].max() - df['value'].min()) / 20
         df = data[data['profile'] == 'phased-signal']
         signal = df['value'].tolist()
         index_shift = df['loc'].min() / -1
         sns.lineplot(data=df, x='loc', y='value', color='darkviolet', label='Phased-Nucleosome Signal',
                      lw=3, alpha=0.7, ax=ax2, legend=False)
-        ymin_2, ymax_2 = df['value'].min() * 0.8, df['value'].max() * 1.2
         ax2.set_ylim(ymin_2, ymax_2)
         df_peaks = data[data['profile'] == 'peaks']
         peak_locs = df_peaks.loc[df_peaks['value'] == 1, 'loc'].tolist()
@@ -327,22 +328,21 @@ def plot_dhs_profiles(name, data, palette=None, show_mpc=False):
         return
     else:
         df_peaks = data[data['profile'] == 'peaks']
-        data = data[~data['profile'].isin([['nuc-centers', 'frag-mean', 'frag-ent', 'frag-mad', 'frag-ratio',
-                                            'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']])]
+        data = data[data['profile'].isin(['depth', 'phased-signal', 'frag-hetero'])]
         sample_name = 'MultiSample'
         if 'subtype' in data:
             hue = 'subtype'
         else:
             hue = 'sample'
         if palette is not None:
-            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=1.14, aspect=11, palette=palette,
+            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=2, aspect=4, palette=palette,
                                 sharey=False, legend_out=True)
         else:
-            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=1.14, aspect=11, sharey=False,
+            sea = sns.FacetGrid(data, row='profile', hue=hue, despine=False, height=2, aspect=4, sharey=False,
                                 legend_out=True)
         sea.map(sns.lineplot, 'loc', 'value', alpha=0.8, legend='full', n_boot=100)
         sea.add_legend()
-        if 'subtype' in data:
+        if 'subtype' in data and show_mpc:
             ax = sea.axes.flatten()[1]
             for subtype in data['subtype'].unique():
                 sub_df = df_peaks[df_peaks['subtype'] == subtype]
@@ -378,10 +378,10 @@ def normalize_data(data):
 # noinspection PyUnresolvedReferences
 def main():
     parser = argparse.ArgumentParser(description='\n### triton_plotters.py ### plots Triton output profiles')
-    parser.add_argument('-i', '--input', help='one or more TritonProfiles.npz/.tsv files; wildcards (e.g. '
+    parser.add_argument('-i', '--input', help='one or more TritonProfiles.npz files; wildcards (e.g. '
                                               'results/*.npz) are OK.', nargs='*', required=True)
     parser.add_argument('-m', '--mode', help='plotting mode (all: all profiles, signal: only smoothed signal profile,'
-                                             ' DSH: raw depth, signal, and heterogeneity profiles). DEFAULT = DHS',
+                                             ' DSH: raw depth, signal, and heterogeneity profiles). DEFAULT = DHS.',
                         required=False, default='DHA')
     parser.add_argument('-c', '--categories', help='tsv file containing matched sample names (column 1) and '
                                                    'categories (column 2) to color samples by composite '
@@ -390,7 +390,7 @@ def main():
                                                    'names passed to Triton (i.e. sample1_TritonProfiles.npz). '
                                                    'Any passed inputs not present in this file will be dropped. '
                                                    'This file should NOT contain a header. DEFAULT = None (plot '
-                                                   'all samples individually)',
+                                                   'all samples individually).',
                         required=False, default=None)
     parser.add_argument('-p', '--palette', help='tsv file containing matched categories/samples (column 1) and HEX '
                                                 'color codes (column 2, e.g. #0077BB) to specify what color to use '
@@ -398,13 +398,13 @@ def main():
                                                 'sample names passed to Triton, or category names passed with the '
                                                 '-c/--categories option. Will error if inputs/categories include '
                                                 'labels not present in palette.This file should NOT contain a header. '
-                                                'DEFAULT = None (use Seaborn default colors)',
+                                                'DEFAULT = None (use Seaborn default colors).',
                         required=False, default=None)
     parser.add_argument('-s', '--sites', help='file containing a list (row-wise) of sites to plot. This file should '
                                               'NOT contain a header. DEFAULT = None (plotting all available sites).',
                         required=False, default=None)
-    parser.add_argument('-w', '--window', help='if set, data is "windowed" - set 0-point to the middle instead of the　'
-                                               '5\' end', action='store_true')
+    parser.add_argument('-w', '--window', help='if set, data is "windowed" - sets 0-point to the middle instead of the　'
+                                               '5\' end. DEFAULT = False.', action='store_true')
 
     args = parser.parse_args()
     input_path = args.input
@@ -414,7 +414,7 @@ def main():
     sites_path = args.sites
     window = args.window
 
-    print('### Running triton_plotters.py in ' + plot_mode + ' mode, ')
+    print('### Running triton_plotters.py in ' + plot_mode + ' mode.')
 
     if categories is not None:
         categories = pd.read_table(categories, sep='\t', header=None)
@@ -442,9 +442,9 @@ def main():
                 for col in norm_cols:
                     df[col] = normalize_data(df[col])
                 if categories is not None:
-                    print('### categories specified but running in single-sample mode - ignoring categories')
+                    print('* categories specified but running in single-sample mode - ignoring categories')
                 df = pd.melt(df, id_vars=['sample', 'loc'], value_vars=cols, var_name='profile')
-                print('Plotting: ')
+                print('- Plotting ' + site + ' for sample ' + sample)
                 if plot_mode == 'all':
                     plot_all_profiles(site, df, palette=palette)
                 elif plot_mode == 'signal':
@@ -464,13 +464,18 @@ def main():
                         tdf['loc'] = tdf['loc'] - len(tdf) / 2
                     tdf['sample'] = sample
                     if categories is not None:
-                        tdf['subtype'] = categories[sample]
+                        if sample in categories.keys():
+                            tdf['subtype'] = categories[sample]
+                        else:
+                            tdf['subtype'] = 'DROP'
                     for col in norm_cols:
                         tdf[col] = normalize_data(tdf[col])
                 if len(dfs) < 2:
                     continue
                 df = pd.concat(dfs)
+                print('- Plotting ' + site + ' for multiple samples')
                 if categories is not None:
+                    df = df[df['subtype'] != 'DROP']
                     df = pd.melt(df, id_vars=['sample', 'loc', 'subtype'], value_vars=cols, var_name='profile')
                 else:
                     df = pd.melt(df, id_vars=['sample', 'loc'], value_vars=cols, var_name='profile')

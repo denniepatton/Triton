@@ -131,6 +131,7 @@ def point_entropy(total_lengths, point_lengths):
 def local_peaks(ys, xs):
     """
     Finds LOCAL (min or max relative to neighbors) given a 1D list/array; only appropriate for very smooth data
+    (E.G. an inverse fourier transform with high frequencies removed)
         Parameters:
             ys (list/array): signal height
             xs (list/array): raw height (for insuring non-zero maxima)
