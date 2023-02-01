@@ -4,7 +4,6 @@
 import os
 import sys
 import pysam
-import random
 import pickle
 import argparse
 import numpy as np
@@ -65,7 +64,8 @@ def generate_profile(region, params):
                 13: T (Tyrosine) frequency**
             * these features are output as np.nan if window == None
             ** sequence is based on the reference, not the reads
-            *** minus-one, plus-one, and inflection locs are only called if window != None, and supersede peak/trough
+            *** minus-one, plus-one, and inflection locs are only called if window != None, and supersede peak/trough;
+                if the inflection loc cannot be determined it will default to 0
     """
     bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack, fdict = params
     bam = pysam.AlignmentFile(bam_path, 'rb')
@@ -230,8 +230,7 @@ def generate_profile(region, params):
     drop_freqs = [idx for idx, val in enumerate(freqs) if val > freq_max]  # frequencies to filter out
     try:
         fourier[drop_freqs] = 0  # this fourier transform is now scrubbed of high frequencies
-        inverse_signal = irfft(fourier, n=roi_length)
-        phased_signal = inverse_signal + np.mean(nc_signal[500:-500])  # add in base component
+        phased_signal = irfft(fourier, n=roi_length)
     except IndexError:  # not enough data to construct a reasonable Fourier
         phased_signal = np.zeros(roi_length)
     # remove the 500 bp buffer from each side of the signal
@@ -252,23 +251,8 @@ def generate_profile(region, params):
         elif peak_index in troughs:
             peak_profile[peak_index] = -1
     if window is not None:
-        # assume minimum, then double-check
-        inflection = np.min(phased_signal[int(window/2 - 73):int(window/2 + 73)])
-        inflection_loc = np.where(phased_signal == inflection)
-        if len(inflection_loc) > 1:
-            inflection_loc = np.absolute(inflection_loc - window/2).argmin()[0]  # closest inflection to 0
-        else:
-            inflection_loc = inflection_loc[0][0]
-        if phased_signal[inflection_loc - 3] < inflection or phased_signal[inflection_loc + 3] < inflection:  # not min
-            inflection = np.max(phased_signal[int(window/2 - 73):int(window/2 + 73)])
-            inflection_loc = np.where(phased_signal == inflection)
-            if len(inflection_loc) > 1:
-                inflection_loc = np.absolute(inflection_loc - window / 2).argmax()[0]
-            else:
-                inflection_loc = inflection_loc[0][0]
-            if phased_signal[inflection_loc - 3] > inflection or phased_signal[inflection_loc + 3] > inflection:
-                # saddle: inconclusive
-                inflection_loc = np.nan
+        inflection_loc = min(peaks + troughs, key=lambda x: abs(x - int(window / 2)))
+        inflection = phased_signal[inflection_loc]
         if not np.isnan(inflection_loc):
             peak_profile[inflection_loc] = 3
             cd_mean = inflection / signal_mean
@@ -455,7 +439,6 @@ def main():
         pos_idx = header.index('position')
     elif window:
         print('No "position" column found in BED file(s): defaulting to index 6 (' + header[6] + ')')
-    # random.shuffle(sites)  # to spread sites evenly between cores given variable size
 
     with open(dict_path, 'rb') as f:
         frag_dict = pickle.load(f)
