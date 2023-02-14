@@ -1,5 +1,5 @@
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
-# v1.0.1, 12/05/2022
+# v1.0.3, 02/14/2023 <3
 
 # utilities for plotting Triton profile outputs
 
@@ -373,7 +373,6 @@ def normalize_data(data):
         return data / mean_val
 
 
-# TODO: take in ..Profiles.npz and profiles.tsv, detect, open differently
 # below is for a non-issue iterating through "files"
 # noinspection PyUnresolvedReferences
 def main():
@@ -425,10 +424,11 @@ def main():
             sites = f.read().splitlines()
 
     if palette_file is not None:
-        palette_file = pd.read_table('/fh/fast/ha_g/user/rpatton/references/palette.tsv', sep='\t', header=None)
+        palette_file = pd.read_table(palette_file, sep='\t', header=None)
         palette = dict(palette_file.itertuples(False, None))
     else:
         palette = None
+
     if len(input_path) == 1:  # individual sample
         test_data = np.load(input_path[0])
         sample = os.path.basename(input_path[0]).split('_TritonProfiles.npz')[0]
@@ -467,7 +467,7 @@ def main():
                         if sample in categories.keys():
                             tdf['subtype'] = categories[sample]
                         else:
-                            tdf['subtype'] = 'DROP'
+                            tdf['subtype'] = 'NaN'
                     for col in norm_cols:
                         tdf[col] = normalize_data(tdf[col])
                 if len(dfs) < 2:
@@ -475,7 +475,16 @@ def main():
                 df = pd.concat(dfs)
                 print('- Plotting ' + site + ' for multiple samples')
                 if categories is not None:
-                    df = df[df['subtype'] != 'DROP']
+                    df = df[df['subtype'].notna()]
+                    if len(df['subtype']) < 2:
+                        print('No samples to plot after matching against the provided categories file. Please ensure '
+                              'provided labels are an exact match! Categories provided: ')
+                        print(categories.keys)
+                        print('Sample names provided: ')
+                        print(samples)
+                        print('Exiting.')
+                        quit()
+                    print(df)
                     df = pd.melt(df, id_vars=['sample', 'loc', 'subtype'], value_vars=cols, var_name='profile')
                 else:
                     df = pd.melt(df, id_vars=['sample', 'loc'], value_vars=cols, var_name='profile')
