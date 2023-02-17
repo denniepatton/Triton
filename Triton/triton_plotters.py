@@ -484,7 +484,6 @@ def main():
                         print(samples)
                         print('Exiting.')
                         quit()
-                    print(df)
                     df = pd.melt(df, id_vars=['sample', 'loc', 'subtype'], value_vars=cols, var_name='profile')
                 else:
                     df = pd.melt(df, id_vars=['sample', 'loc'], value_vars=cols, var_name='profile')
