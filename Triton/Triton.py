@@ -169,7 +169,7 @@ def generate_profile(region, params):
         window_sequence = ref_seq.fetch(bed_tokens[0], start_pos + 500, stop_pos - 500).upper()
         if strand == '+': oh_seq = one_hot_encode(window_sequence)
         else: oh_seq = one_hot_encode(window_sequence[::-1])
-        fragment_length_profile = [[] for _ in range(window)]
+        fragment_length_profile = [[] for _ in range(roi_length - 1000)]
         for read in segment_reads:
             fragment_length = read.template_length
             if frag_range[0] <= np.abs(fragment_length) <= frag_range[1] and read.is_paired and read.\
@@ -244,8 +244,8 @@ def generate_profile(region, params):
                np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
     var_rat = var_range / np.max(phased_signal)
     max_values, peaks, min_values, troughs = local_peaks(phased_signal, nc_signal)
-    peak_profile = np.zeros(window, dtype=int)
-    for peak_index in range(window):
+    peak_profile = np.zeros(roi_length - 1000, dtype=int)
+    for peak_index in range(roi_length - 1000):
         if peak_index in peaks:
             peak_profile[peak_index] = 1
         elif peak_index in troughs:
@@ -294,16 +294,20 @@ def generate_profile(region, params):
                       for point_frags in fragment_length_profile]
     if not np.isnan(inflection_loc) and np.mean(hetero_profile) > 0:
         inflection_het = np.mean(hetero_profile[(inflection_loc - 5):(inflection_loc + 5)]) / np.mean(hetero_profile)
+        inflection_loc = inflection_loc - int(window/2)
     else:
         inflection_het = np.nan
     # sequence profile
     seq_profile = np.delete(oh_seq, 0, 1)  # remove the N row
     # combine and save profiles ----------------------------------------------------------------------------------------
-    signal_array = np.column_stack((depth, phased_signal, nc_signal, mf_profile, shan_profile,
-                                    hetero_profile, mad_profile, ratio_profile, peak_profile))
-    out_array = np.concatenate((signal_array, seq_profile), axis=1)
+    if window is None and (roi_length - 1000) > 20000:  # do not print profiles longer than 20kb to avoid memory issues
+        out_array = np.nan
+    else:
+        signal_array = np.column_stack((depth, phased_signal, nc_signal, mf_profile, shan_profile,
+                                        hetero_profile, mad_profile, ratio_profile, peak_profile))
+        out_array = np.concatenate((signal_array, seq_profile), axis=1)
     return site, frag_mean, frag_std, frag_mad, frag_rat, frag_ent, np_score, np_period, np_amp, mean_depth, var_rat,\
-           cd_mean, flank_diff, inflection_loc - int(window/2), inflection_het, plus_one_loc, minus_one_loc, out_array
+           cd_mean, flank_diff, inflection_loc, inflection_het, plus_one_loc, minus_one_loc, out_array
 
 
 def main():
@@ -330,6 +334,19 @@ def main():
         else:
             raise argparse.ArgumentTypeError('Boolean value expected.')
 
+    def str2int(v):
+        """
+        Stand-in type to read string/int values from the command line
+            Parameters:
+                v (string): input int/string
+            Returns:
+                int or None
+        """
+        if isinstance(v, int):
+            return v
+        else:
+            return None
+
     # parse command line arguments:
     parser = argparse.ArgumentParser(description='\n### Triton.py ### main Triton pipeline')
     parser.add_argument('-n', '--sample_name', help='sample identifier', required=True)
@@ -344,7 +361,7 @@ def main():
     parser.add_argument('-c', '--cpus', help='number of CPUs to use for parallel processing of individual regions or'
                                              'composite regions, if -s True', type=int, required=True)
     parser.add_argument('-w', '--window', help='window size (bp) for composite sites; default=2000',
-                        type=int, default=2000)
+                        type=str2int, default=2000)
     parser.add_argument('-s', '--composite', help='whether to run in composite-site mode', type=str2bool, default=False)
     parser.add_argument('-d', '--frag_dict', help='dictionary of probable nucleosome center-frag displacements,'
                                                   'default=../nc_info/NCDict.pkl',
@@ -384,7 +401,7 @@ def main():
     gc_bias = get_gc_bias_dict(bias_path)
     global chr_idx, start_idx, stop_idx, site_idx, strand_idx, pos_idx
     if stack and window is None:
-        print('ERROR: if using Triton in composite mode a window (-w) must be specified. Exiting.')
+        print('ERROR: if using Triton in composite mode an integer window (-w) must be specified. Exiting.')
         header, sites = None, None
         exit()
     elif stack and window is not None:
@@ -435,9 +452,9 @@ def main():
     else:
         print('WARNING: No "strand" column found in BED file(s): defaulting to "+" for all sites')
         strand_idx = None
-    if window and 'position' in header:
+    if window is not None and 'position' in header:
         pos_idx = header.index('position')
-    elif window:
+    elif window is not None:
         print('No "position" column found in BED file(s): defaulting to index 6 (' + header[6] + ')')
 
     with open(dict_path, 'rb') as f:
