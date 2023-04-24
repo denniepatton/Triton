@@ -17,41 +17,48 @@ Triton profiles are output as a NumPy compressed files (.npz), one for each samp
 Nucleotide-resolution profiles include:
 
     1: Depth (GC-corrected, if provided)  
-    2: Nucleosome-level phased profile  
-    3: Nucleosome center profile (GC-corrected, if provided)  
-    4: Mean fragment size  
-    5: Fragment size Shannon entropy  
-    6: Fragment heterogeneity (unique fragment lengths / total fragments)  
-    7: Fragment MAD (Mean Absolute Deviation)  
-    8: Short:long ratio (x <= 120 / 140 <= x <= 250)  
-    9: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***  
-    10: A (Adenine) frequency**  
-    11: C (Cytosine) frequency**  
-    12: G (Guanine) frequency**  
-    13: T (Tyrosine) frequency**  
+    2: Probable nucleosome center profile (fragment length re-weighted depth)  
+    3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)  
+    4: Fragment lengths' mean  
+    5: Fragment lengths' standard deviation  
+    6: Fragment lengths' median  
+    7: fragment lengths' MAD (Median Absolute Deviation)  
+    8: Fragment lengths' short:long ratio (x <= 150 / x > 150)  
+    9: Fragment lengths' diversity (unique fragment lengths / total fragments)  
+    10: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)  
+    11: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***  
+    12: A (Adenine) frequency**  
+    13: C (Cytosine) frequency**  
+    14: G (Guanine) frequency**  
+    15: T (Tyrosine) frequency**  
   
 Triton region-level features are output as a .tsv file and include:
 
     site: annotation name if stacked, "name" from BED file for each region otherwise  
-        ##Region-level features (fragmentation)##  
+        ### Region-level features (fragmentation) ###  
     fragment-mean: fragment lengths' mean  
     fragment-stdev: fragment lengths' standard deviation  
-    fragment-mad: fragment lengths' MAD (Mean Absolute Deviation)  
-    fragment-ratio: fragment lengths' short:long ratio (x <= 120 / 140 <= x <= 250)  
+    fragment-median: fragment lengths' median  
+    fragment-mad: fragment lengths' MAD (Median Absolute Deviation)  
+    fragment-ratio: fragment lengths' short:long ratio (x <= 150 / x > 150)  
+    fragment-diversity: fragment lengths' diversity (unique fragment lengths / total fragments)  
     fragment-entropy: fragment lengths' Shannon entropy  
-        ##Region-level features (phasing)##  
+        ### Region-level features (phasing) ###  
     np-score: Nucleosome Phasing score  
-    np-period: phased-nucleosome periodicity  
+    np-period: phased-nucleosome period  
     np-amplitude: phased-nucleosome mean amplitude  
-        ##Region-level features (profile-based)##  
+        ### Region-level features (profile-based) ###  
     mean-depth: mean depth in the region (GC-corrected, if provided)  
-    var-ratio: fraction of variability in the phased signal  
+    var-ratio: ratio of variation in total phased signal  
     plus-one-pos*: location relative to central-loc of plus-one nucleosome  
     minus-one-pos*: location relative to central-loc of minus-one nucleosome  
     plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome  
     central-loc*: location of central inflection relative to window center (0)  
     central-depth*: phased signal value at the central-loc (with mean in region set to 1)  
-    central-heterogeneity*: mean fragment heterogeneity value in the +/-5 bp region about the central-loc  
+    central-diversity*: normalized fragment heterogeneity value in the +/-5 bp region about the central-loc  
+    
+ When run in composite mode Triton will also output a SkippedSites.bed for each samples, containing individual site
+ coordinates for sites skipped due to outlier coverage (MAD > 10 in any region).
   
 \* these features are output as np.nan if window == None  
 \** sequence is based on the reference, not the reads  
@@ -61,7 +68,7 @@ Triton region-level features are output as a .tsv file and include:
 
 Triton may be used either as an end point in cfDNA data analysis by outputting ready-to-use features from a given list of regions or
 composite regions, or as processing step for further feature extraction from output profiles. Biomarkers reported directly from
-Triton can be used to distinguish cancer lineages (see Publications) in tradtional machine learning approaches, specific profiles
+Triton can be used to distinguish cancer lineages (see Publications) in traditional machine learning approaches, specific profiles
 may be plotted for qualitative analysis, or profile outputs may be utilized in signal-based analyses and learning structures, 
 e.g. Convolutional Neural Networks (CNNs). 
 
@@ -71,7 +78,7 @@ e.g. Convolutional Neural Networks (CNNs).
 
 ## Usage
 
-Triton may be used as a local Python package, incoporated directly into scripts, or run on a remote cluster using the provided Snakemake.
+Triton may be used as a local Python package, incorporated directly into scripts, or run on a remote cluster using the provided Snakemake.
 See below for usage details:
 
 ### Inputs to Triton.py:
@@ -100,7 +107,7 @@ triton_helpers.py | contains helper functions called by Triton.py
 triton_cleanup.py | combines TritonFeatures.tsv output files produced by Triton when run on multiple samples; called by Snakemake  
 triton_plotters.py | plotting utils and functions for TritonProfiles.npz files; use at your own discretion or modify as you see fit!  
 nc_dist.py | a modified version of Triton.py for generating composite nucleosome-center profiles; see nc_info  
-nc_plot.py | used after nc_dist.py to create the frag_dict and plot results  
+nc_dict.py | used after nc_dist.py to create the frag_dict and plot results  
 
 ### nc_info
 Rather than exclude information about fragment length when producing nucleosome coverage signals, Triton attempts to
@@ -110,10 +117,12 @@ overlapping 50 human iNPS peak datasets from a variety of tissue types and cell 
 against each other, keeping only regions represented in all samples. Triton (as nc_dist.py) was then run on the 186 remaining
 high-confidence sites, using a cohort of healthy donor cfDNA from blood plasma. The resulting nc_info/NCDict.pkl represents a matrix
 of fragment length vs displacement of fragment center from nucleosome center values, renormalized, so that the "weight" of each
-fragment contributing to the nucleosome center profile is adjusted at each position.
+fragment contributing to the nucleosome center profile is adjusted at each position. The contained NCDict.pkl is based on fitting
+raw counts to a triple-Gaussian: a centered distribution for capturing overlapping single nucleosomes and a symmetric, displaced
+double-Gaussian for capturing dinucleosomes. Raw and fit weight-matrix visualizations can be found in nc_info.
 
 In general, the results of this analysis dictate that short fragments (~150-210 bp) generally have centers coinciding with nucleosomes,
-while longer fragments tend to bind nucleosome asymmetrically nearer to one end. A visualization of this phenomenon can be found in nc_info.
+while longer fragments tend to bind nucleosome asymmetrically nearer to one end or in a pattern indicative of dinucleosomal binding.
 
 If the user would like to re-generate NCDict.pkl with their own site list or samples, please modify nc_dist.py and nc_plot.py as needed
 and overwrite the default NCDict.pkl in future runs.
@@ -122,7 +131,7 @@ The BED file used, derived from NucMap, is also available: nc_info/hsNuc_iNPSPea
 
 ### TO RUN AS A SNAKEMAKE
 
-Ensure the following files are up-to-date for your system and needs (defaulty values for Fred Hutch systems are included)
+Ensure the following files are up-to-date for your system and needs (default values for Fred Hutch systems are included)
 
 config/config.yaml: specify inputs as detailed above, and ensure the annotation and cluster_slurm paths are correct  
 config/cluster_slurm.yaml: specify computational resources for your system  
