@@ -1,31 +1,34 @@
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
-# v1.0.0, 2/09/2023
+# v1.0.1, 04/24/2023
 
 # utilities for extracting (modifiable) additional features from Triton signal output files
 
-# N.B. the numpy array ordering of profile objects:
-# 1: Depth (GC-corrected, if provided)
-# 2: Nucleosome-level phased profile
-# 3: Nucleosome center profile (GC-corrected, if provided)
-# 4: Mean fragment size
-# 5: Fragment size Shannon entropy
-# 6: Fragment heterogeneity (unique fragment lengths / total fragments)
-# 7: Fragment MAD (Mean Absolute Deviation)
-# 8: Short:long ratio (x <= 120 / 140 <= x <= 250)
-# 9: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
-# 10: A (Adenine) frequency**
-# 11: C (Cytosine) frequency**
-# 12: G (Guanine) frequency**
-# 13: T (Tyrosine) frequency**
+"""
+N.B. the numpy array ordering of profile objects:
+1: Depth (GC-corrected, if provided)
+2: Probable nucleosome center profile (fragment length re-weighted depth)
+3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
+4: Fragment lengths' mean
+5: Fragment lengths' standard deviation
+6: Fragment lengths' median
+7: fragment lengths' MAD (Median Absolute Deviation)
+8: Fragment lengths' short:long ratio (x <= 150 / x > 150)
+9: Fragment lengths' diversity (unique fragment lengths / total fragments)
+10: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)
+11: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
+12: A (Adenine) frequency**
+13: C (Cytosine) frequency**
+14: G (Guanine) frequency**
+15: T (Tyrosine) frequency**
+"""
 
 import os
 import argparse
 import numpy as np
 import pandas as pd
 
-cols = ['depth', 'phased-signal', 'nuc-centers', 'frag-mean', 'frag-ent', 'frag-hetero', 'frag-mad', 'frag-ratio',
-        'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']
-norm_cols = ['depth', 'phased-signal', 'nuc-centers', 'frag-mean', 'frag-ent', 'frag-hetero', 'frag-mad', 'frag-ratio']
+cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-mean', 'frag-stdev', 'frag-median', 'frag-mad', 'frag-ratio',
+        'frag-diversity', 'frag-entropy',  'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']
 
 
 def extract_features(data, site, features):
@@ -104,37 +107,37 @@ def main():
 
     out_dfs = []
 
-    # TODO: something doesn't work when doing individual!
-    if len(input_path) == 1:  # individual sample
-        test_data = np.load(input_path[0])
-        sample = os.path.basename(input_path[0]).split('_TritonProfiles.npz')[0]
-        for site in test_data.files:
-            if sites_path is None or site in sites:
-                df = pd.DataFrame(test_data[site], columns=cols)
-                df['sample'] = sample
-                df['loc'] = np.arange(len(df))
-                for col in norm_cols:
-                    df[col] = normalize_data(df[col])
-                df = pd.melt(df, id_vars=['sample', 'loc'], value_vars=cols, var_name='profile')
-                print('Extracting features for site: ' + site)
-                out_dfs.append(extract_features(df, site, new_feats))
-    else:  # multiple samples:
-        samples = [os.path.basename(path).split('_TritonProfiles.npz')[0] for path in input_path]
-        tests_data = [np.load(path) for path in input_path]
-        for site in tests_data[0].files:
-            if sites_path is None or site in sites:
-                dfs = [pd.DataFrame(test_data[site], columns=cols)
-                       for test_data in tests_data if len(test_data[site].shape) == 2]
-                for tdf, sample in zip(dfs, samples):
-                    tdf['loc'] = np.arange(len(tdf))
-                    tdf['sample'] = sample
-                    for col in norm_cols:
-                        tdf[col] = normalize_data(tdf[col])
-                if len(dfs) < 2:
-                    continue
-                df = pd.concat(dfs)
-                print('Extracting features for site: ' + site)
-                out_dfs.append(extract_features(df, site, new_feats))
+    # # TODO: something doesn't work when doing individual!
+    # if len(input_path) == 1:  # individual sample
+    #     test_data = np.load(input_path[0])
+    #     sample = os.path.basename(input_path[0]).split('_TritonProfiles.npz')[0]
+    #     for site in test_data.files:
+    #         if sites_path is None or site in sites:
+    #             df = pd.DataFrame(test_data[site], columns=cols)
+    #             df['sample'] = sample
+    #             df['loc'] = np.arange(len(df))
+    #             for col in norm_cols:
+    #                 df[col] = normalize_data(df[col])
+    #             df = pd.melt(df, id_vars=['sample', 'loc'], value_vars=cols, var_name='profile')
+    #             print('Extracting features for site: ' + site)
+    #             out_dfs.append(extract_features(df, site, new_feats))
+    # else:  # multiple samples:
+    samples = [os.path.basename(path).split('_TritonProfiles.npz')[0] for path in input_path]
+    tests_data = [np.load(path) for path in input_path]
+    for site in tests_data[0].files:
+        if sites_path is None or site in sites:
+            dfs = [pd.DataFrame(test_data[site], columns=cols)
+                   for test_data in tests_data if len(test_data[site].shape) == 2]
+            for tdf, sample in zip(dfs, samples):
+                tdf['loc'] = np.arange(len(tdf))
+                tdf['sample'] = sample
+                # for col in norm_cols:
+                #     tdf[col] = normalize_data(tdf[col])
+            if len(dfs) < 2:
+                continue
+            df = pd.concat(dfs)
+            print('Extracting features for site: ' + site)
+            out_dfs.append(extract_features(df, site, new_feats))
 
     print('Merging and saving results . . .')
     df_final = pd.concat(out_dfs).set_index('sample')

@@ -106,6 +106,7 @@ Triton.py | primary script containing the generate_profile() function; takes in 
 triton_helpers.py | contains helper functions called by Triton.py  
 triton_cleanup.py | combines TritonFeatures.tsv output files produced by Triton when run on multiple samples; called by Snakemake  
 triton_plotters.py | plotting utils and functions for TritonProfiles.npz files; use at your own discretion or modify as you see fit!  
+triton_extractors.py | extraction utils for producing additional custom features from signal profiles; modify as needed
 nc_dist.py | a modified version of Triton.py for generating composite nucleosome-center profiles; see nc_info  
 nc_dict.py | used after nc_dist.py to create the frag_dict and plot results  
 
