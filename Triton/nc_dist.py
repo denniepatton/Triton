@@ -1,7 +1,8 @@
 # Robert Patton, rpatton@fredhutch.org
-# v1.0.0, 11/30/2022
+# v1.0.1, 04/24/2023
 
 # this is a modified version of Triton, designed to output only information about where nucleosomes are located
+# downstream analyses of outputs are used in nc_dict.py
 
 import os
 import sys
@@ -17,47 +18,15 @@ chr_idx, start_idx, stop_idx, site_idx, strand_idx, pos_idx = 0, 1, 2, 3, 5, 6  
 
 def generate_profile(region, params):
     """
-    Generates single or composite signal profiles and extracts features (fragmentation, nucleosome phasing, and profile
-    shape-based) for a single sample. Utilizes functions from triton_helpers.py.
+    Generates composite signal profiles and extracts the distance from each fragment center to the composite region
+    center. Utilizes functions from triton_helpers.py.
         Parameters:
             region (string): either a file path pointing to a BED-like file (composite) or a BED-like line
             params (list): bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack
         Returns:
-            site: annotation name if stacked, "name" from BED file for each region otherwise
-                ### Region-level features (fragmentation) ###
-            fragment-mean: fragment lengths' mean
-            fragment-stdev: fragment lengths' standard deviation
-            fragment-mad: fragment lengths' MAD (Mean Absolute Deviation)
-            fragment-ratio: fragment lengths' short:long ratio (x <= 120 / 140 <= x <= 250)
-            fragment-entropy: fragment lengths' Shannon entropy
-                ### Region-level features (phasing) ###
-            np-score: Nucleosome Phasing score
-            np-period: phased-nucleosome periodicity
-                ### Region-level features (profile-based) ###
-            mean-depth: mean depth in the region (GC-corrected, if provided)
-            var-ratio: ratio of variation to constant noise in the phased signal
-            central-depth*: central inflection value as a fraction of the total variation (+ = peak, - = trough)
-            plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome, relative to variation minimum
-            central-loc*: location of central inflection relative to window center (0)
-            plus-one-pos*: location relative to central-loc of plus-one nucleosome
-            minus-one-pos*: location relative to central-loc of minus-one nucleosome
-                ### Region-level profiles (all un-normalized, nt-resolution) ###
-            numpy array: shape 13xN containing:
-                1: Depth (GC-corrected, if provided)
-                2: Nucleosome-level phased profile
-                3: Nucleosome center profile (GC-corrected, if provided)
-                4: Mean fragment size
-                5: Fragment size Shannon entropy
-                6: Region fragment profile Dirichlet-normalized Shannon entropy
-                7: Fragment heterogeneity (unique fragment lengths / total fragments)
-                8: Fragment MAD (Mean Absolute Deviation)
-                9: Short:long ratio (x <= 120 / 140 <= x <= 250)
-                10: A (Adenine) frequency**
-                11: C (Cytosine) frequency**
-                12: G (Guanine) frequency**
-                13: T (Tyrosine) frequency**
-            * these features are output as np.nan if window == None
-            ** sequence is based on the reference, not the reads
+            site: annotation name
+            numpy array: 2D array of counts with (500 - fragment length) indexed rows, and displacement from region
+                center as columns (includes negative displacements)
     """
     bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack = params
     bam = pysam.AlignmentFile(bam_path, 'rb')
@@ -98,9 +67,8 @@ def generate_profile(region, params):
 def main():
     """
     Takes in input parameters for a single sample Triton run, evaluates the site list format, manages breaking up
-    sites into chunks to be run in parallel with generate_profile(), then combines outputs from each core and saves
-    them to two files: sample_name_TritonFeatures.tsv and sample_name_TritonProfiles.npz containing region-level
-    features and signal profiles, respectively.
+    sites into chunks to be run in parallel with generate_profile(), then combines outputs from each core and saves:
+    sample_name_TritonNucPlacementProfiles.npz containing region-level displacement arrays.
     """
     def str2bool(v):
         """

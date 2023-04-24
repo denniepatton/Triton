@@ -1,22 +1,29 @@
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
-# v1.0.3, 02/14/2023 <3
+# v2.0.0, 04/12/2023
 
 # utilities for plotting Triton profile outputs
 
-# N.B. the numpy array ordering of profile objects:
-# 1: Depth (GC-corrected, if provided)
-# 2: Nucleosome-level phased profile
-# 3: Nucleosome center profile (GC-corrected, if provided)
-# 4: Mean fragment size
-# 5: Fragment size Shannon entropy
-# 6: Fragment heterogeneity (unique fragment lengths / total fragments)
-# 7: Fragment MAD (Mean Absolute Deviation)
-# 8: Short:long ratio (x <= 120 / 140 <= x <= 250)
-# 9: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
-# 10: A (Adenine) frequency**
-# 11: C (Cytosine) frequency**
-# 12: G (Guanine) frequency**
-# 13: T (Tyrosine) frequency**
+"""
+N.B. the numpy array ordering of profile objects:
+1: Depth (GC-corrected, if provided)
+2: Probable nucleosome center profile (fragment length re-weighted depth)
+3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
+4: Fragment lengths' mean
+5: Fragment lengths' standard deviation
+6: Fragment lengths' median
+7: fragment lengths' MAD (Median Absolute Deviation)
+8: Fragment lengths' short:long ratio (x <= 150 / x > 150)
+9: Fragment lengths' diversity (unique fragment lengths / total fragments)
+10: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)
+11: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
+12: A (Adenine) frequency**
+13: C (Cytosine) frequency**
+14: G (Guanine) frequency**
+15: T (Tyrosine) frequency**
+"""
+
+# TODO: remove "single" sample mode, instead passing fake palette
+
 
 import os
 import argparse
@@ -25,9 +32,9 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-cols = ['depth', 'phased-signal', 'nuc-centers', 'frag-mean', 'frag-ent', 'frag-hetero', 'frag-mad', 'frag-ratio',
-        'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']
-norm_cols = ['depth', 'phased-signal', 'nuc-centers', 'frag-mean', 'frag-ent', 'frag-hetero', 'frag-mad', 'frag-ratio']
+cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-mean', 'frag-stdev', 'frag-median', 'frag-mad', 'frag-ratio',
+        'frag-diversity', 'frag-entropy',  'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']
+norm_cols = ['depth', 'nuc-centers', 'phased-signal']
 
 
 def plot_all_profiles(name, data, palette=None):
@@ -136,7 +143,8 @@ def plot_all_profiles(name, data, palette=None):
         return
     else:
         df_peaks = data[data['profile'] == 'peaks']
-        data = data[~data['profile'].isin(['a-freq', 'c-freq', 'g-freq', 't-freq', 'peaks', 'nuc-centers'])]
+        data = data[~data['profile'].isin(['a-freq', 'c-freq', 'g-freq', 't-freq', 'peaks'])]
+        # data = data[~data['profile'].isin(['a-freq', 'c-freq', 'g-freq', 't-freq', 'peaks', 'nuc-centers'])]
         sample_name = 'MultiSample'
         if 'subtype' in data:
             hue = 'subtype'
@@ -434,12 +442,13 @@ def main():
         sample = os.path.basename(input_path[0]).split('_TritonProfiles.npz')[0]
         for site in test_data.files:
             if sites_path is None or site in sites:
-                df = pd.DataFrame(test_data[site], columns=cols)
+                df = pd.DataFrame(test_data[site].T, columns=cols)
                 df['sample'] = sample
                 df['loc'] = np.arange(len(df))
                 if window:
                     df['loc'] = df['loc'] - len(df)/2
-                for col in norm_cols:
+                # for col in norm_cols:
+                for col in cols:
                     df[col] = normalize_data(df[col])
                 if categories is not None:
                     print('* categories specified but running in single-sample mode - ignoring categories')
@@ -456,7 +465,7 @@ def main():
         tests_data = [np.load(path) for path in input_path]
         for site in tests_data[0].files:
             if sites_path is None or site in sites:
-                dfs = [pd.DataFrame(test_data[site], columns=cols)
+                dfs = [pd.DataFrame(test_data[site].T, columns=cols)
                        for test_data in tests_data if len(test_data[site].shape) == 2]
                 for tdf, sample in zip(dfs, samples):
                     tdf['loc'] = np.arange(len(tdf))
@@ -467,8 +476,9 @@ def main():
                         if sample in categories.keys():
                             tdf['subtype'] = categories[sample]
                         else:
-                            tdf['subtype'] = 'NaN'
-                    for col in norm_cols:
+                            tdf['subtype'] = np.nan
+                    # for col in norm_cols:
+                    for col in cols:
                         tdf[col] = normalize_data(tdf[col])
                 if len(dfs) < 2:
                     continue

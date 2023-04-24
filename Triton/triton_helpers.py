@@ -1,5 +1,5 @@
 # Robert Patton, rpatton@fredhutch.org
-# v1.1.0, 1/11/2023
+# v2.0.1, 04/24/2023
 
 import numpy as np
 import pandas as pd
@@ -48,84 +48,55 @@ def get_gc_bias_dict(bias_path):
         return None
 
 
-def frag_ratio(frag_lengths):
+def frag_metrics(frag_lengths, bins):
     """
-    Returns the ratio of short (f <= 120) to long (140 <= f <= 250) fragment lengths in a list/array
+    Returns the mean, standard deviation, median absolute deviation, and ratio of short (f <= 150) to long (151 <= f)*
+    fragment lengths given an input of fragment length counts (see below).
+    * Used to be short (f <= 120) to long (140 <= f <= 250)
         Parameters:
-            frag_lengths (list/array): series ofr fragment lengths
-        Returns:
-            float: the short/long ratio
-    """
-    short_frags = len([x for x in frag_lengths if x <= 120])
-    long_frags = len([x for x in frag_lengths if 140 <= x <= 250])
-    if short_frags > 0 and long_frags > 0:
-        ratio = short_frags / long_frags
-        return ratio
-    else:
-        return np.nan
-
-
-def shannon_entropy(values, bins, binned=False):
-    """
-    Returns the Shannon Entropy of a set of values; will bin with "bins" bins if a histogram is not passed
-        Parameters:
-            values (list/array): series of values or histogram values
+            frag_lengths (list/array): 1D array of fragment length counts, where the index is the fragment length
             bins (list): list of bin boundaries
-            binned (boolean): whether the values have been turned into a histogram already
+        Returns:
+            mean, stdev, MAD, ratio (float, float, int, float)
+    """
+    total_count = np.sum(frag_lengths)
+    if total_count < 10:  # fewer than 10 overlapping reads - too noisy to be of use.
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+    mean = sum([idx * val for idx, val in enumerate(frag_lengths)]) / total_count
+    stdev = np.sqrt(sum([val * (idx - mean)**2 for idx, val in enumerate(frag_lengths)]) / total_count)
+    median = 0
+    while np.sum(frag_lengths[0:(median + 1)]) < (total_count / 2):
+        median += 1
+    ads = np.zeros(len(frag_lengths))  # ordered absolute deviation counts
+    for idx, val in enumerate(frag_lengths):
+        ads[np.abs(idx - median)] += val
+    mad = 0
+    while np.sum(ads[0:(mad + 1)]) < (total_count / 2):
+        mad += 1
+    ratio = np.sum(frag_lengths[:151]) / np.sum(frag_lengths[151:])
+    diversity = np.count_nonzero(frag_lengths) / total_count
+    entropy = shannon_entropy(frag_lengths, bins)
+    return mean, stdev, median, mad, ratio, diversity, entropy
+
+
+def shannon_entropy(counts, bins):
+    """
+    Returns the Shannon Entropy of a set of values; will bin with "bins" bins
+        Parameters:
+            counts (list/array): 1D array of fragment length counts, where the index is the fragment length
+            bins (list): list of bin boundaries
         Returns:
             float: Shannon Entropy
     """
-    if not binned:
-        histogram = np.histogram(values, bins=bins)[0]
-    else:
-        histogram = values
-    if sum(histogram) < 2:
+    histogram = [np.sum(counts[val:(val + 5)]) for val in bins]
+    total_counts = sum(histogram)
+    if total_counts < 2:
         return 0
     pdf = histogram / sum(histogram)
     pdf = [p for p in pdf if p != 0.0]
-    moments = [p * np.log(p) for p in pdf]
+    # moments = [p * np.log(p) for p in pdf]  # un-normalized
+    moments = [p * np.log(p) / np.log(total_counts) for p in pdf]  # normalized
     return - sum(moments)
-
-
-def mean_entropy(pdf_matrix, counts, bins):
-    """
-    Finds the mean (expected) entropy given probability distributions, for a number of counts and set of bins
-        Parameters:
-            pdf_matrix (ndarray): drawn PDF samples of shape (size, #)
-            counts (int): number of multinomial draws to perform
-            bins (list): list of bin boundaries
-        Returns:
-            float: expected Shannon Entropy
-    """
-    entropies = []
-    for row in pdf_matrix:
-        draws = np.random.multinomial(counts, row)
-        entropies.append(shannon_entropy(draws, bins, binned=True))
-    return np.mean(entropies)
-
-
-def point_entropy(total_lengths, point_lengths):
-    """
-    Using all available fragments to inform min/max bin boundaries, find the Shannon Entropy (1bp bins) at every point
-        Parameters:
-            total_lengths (list): all lengths represented in a region
-            point_lengths (list of lists): bp-wise list of lists containing all fragment lengths overlapping that point
-        Returns:
-            list: Shannon Entropies at each point (corresponds to ordering in point_lengths)
-    * commented out portions are for region-level Dirichlet normalization - has little effect so dropped
-    """
-    min_size, max_size = min(total_lengths), max(total_lengths)
-    bin_range = list(range(min_size, max_size, 1))
-    # hist = np.histogram(total_lengths, bins=bin_range)[0]
-    # hist = [h for h in hist if h != 0.0]
-    # dist_pdfs = np.random.dirichlet(hist, 1000)
-    # frag_nums = list(set([len(frags) for frags in point_lengths]))
-    # norm_dict = {i: mean_entropy(dist_pdfs, i, bin_range) for i in frag_nums}
-    point_shannon_entropies = [shannon_entropy(frags, bin_range) for frags in point_lengths]
-    # point_norm_entropies = [(val / norm_dict[len(frags)]) if len(frags) > 2 else 0 for val, frags
-    #                         in zip(point_shannon_entropies, point_lengths)]
-    # return point_shannon_entropies, point_norm_entropies
-    return point_shannon_entropies
 
 
 def local_peaks(ys, xs):
@@ -176,24 +147,76 @@ def nearest_peaks(ref_point, ref_list):
     return left_index, right_index
 
 
-def dirichlet_normalized_entropy(lengths, ref_lengths):
-    """
-    Given two sets of fragment lengths in a region, return the Shannon entropy normalized by the expected Shannon
-    Entropy for a given set of fragment lengths (ref_lengths).
-    N.B., if lengths==ref_lengths, normalization still occurs, using a hypothetical, Dirichlet-derived distribution
-        Parameters:
-            lengths (list/array): list of fragment lengths to find entropy of
-            ref_lengths (list/array): list of fragment lengths to use as a standard entropy reference
-        Returns:
-            float: normalized entropy
-    """
-    min_size, max_size, total_frags = min(lengths + ref_lengths), max(lengths + ref_lengths), len(lengths)
-    bin_range = list(range(min_size, max_size, 1))
-    hist = np.histogram(ref_lengths, bins=bin_range)[0]
-    hist = [h for h in hist if h != 0.0]
-    dist_pdfs = np.random.dirichlet(hist, 1000)
-    norm_factor = mean_entropy(dist_pdfs, total_frags, bin_range)
-    if norm_factor > 0:
-        return shannon_entropy(lengths, bin_range) / norm_factor
-    else:
-        return np.nan
+# def frag_ratio(frag_lengths):
+#     """
+#     Returns the ratio of short (f <= 150) to long (151 <= f) fragment lengths in a list/array
+#     * Used to be short (f <= 120) to long (140 <= f <= 250)
+#         Parameters:
+#             frag_lengths (list/array): series of fragment lengths
+#         Returns:
+#             float: the short/long ratio
+#     """
+#     short_frags = len([x for x in frag_lengths if x <= 120])
+#     long_frags = len([x for x in frag_lengths if 140 <= x <= 250])
+#     if short_frags > 0 and long_frags > 0:
+#         ratio = short_frags / long_frags
+#         return ratio
+#     else:
+#         return np.nan
+#
+#
+# def dirichlet_normalized_entropy(counts, ref_counts):
+#     """
+#     Given two sets of fragment lengths in a region, return the Shannon entropy normalized by the expected Shannon
+#     Entropy for a given set of fragment lengths (ref_lengths).
+#     N.B., if lengths==ref_lengths, normalization still occurs, using a hypothetical, Dirichlet-derived distribution
+#         Parameters:
+#             counts (list/array): 1D array of fragment length counts, where the index is the fragment length
+#             ref_counts (list/array): same as above, but to use as a standard reference
+#         Returns:
+#             float: normalized entropy
+#     """
+#     bin_range = list(range(15, 500, 5))  # hardcoded for dict-based analyses of range 15-500
+#     total_frags = np.sum(counts)
+#     ref_hist = [np.sum(ref_counts[val:(val + 5)]) for val in bin_range]
+#     ref_hist = [h for h in ref_hist if h != 0.0]
+#     dist_pdfs = np.random.dirichlet(ref_hist, 1000)
+#     norm_factor = mean_entropy(dist_pdfs, total_frags, bin_range)
+#     if norm_factor > 0:
+#         return shannon_entropy(counts, bin_range) / norm_factor
+#     else:
+#         return np.nan
+#
+#
+# def mean_entropy(pdf_matrix, counts, bins):
+#     """
+#     Finds the mean (expected) entropy given probability distributions, for a number of counts and set of bins
+#         Parameters:
+#             pdf_matrix (ndarray): drawn PDF samples of shape (size, #)
+#             counts (int): number of multinomial draws to perform
+#             bins (list): list of bin boundaries
+#         Returns:
+#             float: expected Shannon Entropy
+#     """
+#     entropies = []
+#     for row in pdf_matrix:
+#         draws = np.random.multinomial(counts, row)
+#         entropies.append(shannon_entropy(draws, bins, binned=True))
+#     return np.mean(entropies)
+#
+#
+# def point_entropy(ordered_counts, bins, background_entropy):
+#     """
+#     Finds the Shannon Entropy (1bp bins) at every point, scaled by some expected background
+#         Parameters:
+#             ordered_counts (2D array): 2D array where columns represent loci, and the rows represent fragment length
+#                 counts of length row_index
+#             bins (list): list of bin boundaries
+#             background_entropy (float): normalization constant
+#         Returns:
+#             1D array: Shannon Entropies at each point (corresponds to ordering in ordered_counts)
+#     """
+#     point_shannon_entropies = np.apply_along_axis(shannon_entropy, axis=0, arr=ordered_counts, bins=bins)
+#     return point_shannon_entropies / background_entropy
+
+

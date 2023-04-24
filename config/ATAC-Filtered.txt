@@ -1,0 +1,12 @@
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/AD-Exclusive_filtered.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/AD-Exclusive_filtered_sig.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/AD-Exclusive_filtered_top1000.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/NE-Exclusive_filtered.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/NE-Exclusive_filtered_sig.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/NE-Exclusive_filtered_top1000.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/PSMA-Neg-Exclusive_filtered.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/PSMA-Neg-Exclusive_filtered_sig.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/PSMA-Neg-Exclusive_filtered_top1000.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/PSMA-Pos-Exclusive_filtered.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/PSMA-Pos-Exclusive_filtered_sig.bed
+/fh/fast/ha_g/user/rpatton/references/BEDs/ATAC_filtered/PSMA-Pos-Exclusive_filtered_top1000.bed

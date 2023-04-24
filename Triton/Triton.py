@@ -1,5 +1,5 @@
 # Robert Patton, rpatton@fredhutch.org
-# v1.2.0, 1/11/2023
+# v2.0.0, 04/12/2023
 
 import os
 import sys
@@ -31,8 +31,10 @@ def generate_profile(region, params):
                 ### Region-level features (fragmentation) ###
             fragment-mean: fragment lengths' mean
             fragment-stdev: fragment lengths' standard deviation
-            fragment-mad: fragment lengths' MAD (Mean Absolute Deviation)
-            fragment-ratio: fragment lengths' short:long ratio (x <= 120 / 140 <= x <= 250)
+            fragment-median: fragment lengths' median
+            fragment-mad: fragment lengths' MAD (Median Absolute Deviation)
+            fragment-ratio: fragment lengths' short:long ratio (x <= 150 / x > 150)
+            fragment-diversity: fragment lengths' diversity (unique fragment lengths / total fragments)
             fragment-entropy: fragment lengths' Shannon entropy
                 ### Region-level features (phasing) ###
             np-score: Nucleosome Phasing score
@@ -46,22 +48,25 @@ def generate_profile(region, params):
             plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome
             central-loc*: location of central inflection relative to window center (0)
             central-depth*: phased signal value at the central-loc (with mean in region set to 1)
-            central-heterogeneity*: mean fragment heterogeneity value in the +/-5 bp region about the central-loc
-                ### Region-level profiles (all un-normalized, nt-resolution) ###
-            numpy array: shape 13xN containing:
+            central-diversity*: normalized fragment heterogeneity value in the +/-5 bp region about the central-loc
+                ### Region-level profiles (all un-normalized except entropy, nt-resolution) ###
+            numpy array: shape 15xN containing:
                 1: Depth (GC-corrected, if provided)
-                2: Nucleosome-level phased profile
-                3: Nucleosome center profile (GC-corrected, if provided)
-                4: Mean fragment size
-                5: Fragment size Shannon entropy
-                6: Fragment heterogeneity (unique fragment lengths / total fragments)
-                7: Fragment MAD (Mean Absolute Deviation)
-                8: Short:long ratio (x <= 120 / 140 <= x <= 250)
-                9: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
-                10: A (Adenine) frequency**
-                11: C (Cytosine) frequency**
-                12: G (Guanine) frequency**
-                13: T (Tyrosine) frequency**
+                2: Probable nucleosome center profile (fragment length re-weighted depth)
+                3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
+                4: Fragment lengths' mean
+                5: Fragment lengths' standard deviation
+                6: Fragment lengths' median
+                7: fragment lengths' MAD (Median Absolute Deviation)
+                8: Fragment lengths' short:long ratio (x <= 150 / x > 150)
+                9: Fragment lengths' diversity (unique fragment lengths / total fragments)
+                10: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)
+                11: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
+                12: A (Adenine) frequency**
+                13: C (Cytosine) frequency**
+                14: G (Guanine) frequency**
+                15: T (Tyrosine) frequency**
+            skipped-sites: list of annotation lines skipped due to outlier peaks with MAD > 10 (composite only)
             * these features are output as np.nan if window == None
             ** sequence is based on the reference, not the reads
             *** minus-one, plus-one, and inflection locs are only called if window != None, and supersede peak/trough;
@@ -70,38 +75,43 @@ def generate_profile(region, params):
     bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack, fdict = params
     bam = pysam.AlignmentFile(bam_path, 'rb')
     ref_seq = pysam.FastaFile(ref_seq_path)
-    roi_fragment_lengths = []
+    fragment_length_profile = np.zeros((frag_range[1] + 1, window))
+    fragment_lengths = np.zeros(frag_range[1] + 1)
+    skipped_sites = []
     if stack:  # assemble depth and fragment profiles for composite sites ----------------------------------------------
         site = os.path.basename(region).split('.')[0]  # use the file name as the feature name
-        roi_length = window + 1000
+        roi_length = window + 1000  # 500 bp buffers are added for a smooth FFT in the ROI
         depth, nc_signal = np.zeros(roi_length), np.zeros(roi_length)
-        fragment_length_profile = [[] for _ in range(window)]  # kept as list which can append faster than np arrays
         oh_seq = np.zeros((window, 5))
         with open(region.strip(), 'r') as sites_file:
             for entry in sites_file:  # iterate through regions in this particular BED file
+                site_depth, site_nc_signal = np.zeros(roi_length), np.zeros(roi_length)
+                site_fragment_lengths = np.zeros(frag_range[1] + 1)
+                site_fragment_length_profile = np.zeros((frag_range[1] + 1, window))
                 bed_tokens = entry.strip().split('\t')
                 if not bed_tokens[pos_idx].isdigit():  # header or typo line
                     continue
                 chrom, center_pos = str(bed_tokens[chr_idx]), int(bed_tokens[pos_idx])
                 if strand_idx is not None:
                     strand = str(bed_tokens[strand_idx])
-                else:
+                else:  # treat as + if not strand info provided
                     strand = '+'
                 start_pos = center_pos - int(window/2) - 500
                 stop_pos = center_pos + int(window/2) + 500
                 # process all fragments falling inside the ROI
-                if start_pos < 0: continue
+                if start_pos < 0:  # exclude windows on boundaries which do not fully overlap
+                    skipped_sites.append(entry)
+                    continue
                 segment_reads = bam.fetch(chrom, start_pos, stop_pos)
                 window_sequence = ref_seq.fetch(chrom, start_pos + 500, stop_pos - 500).upper()
                 if len(window_sequence) != window:  # truncated reference region: skip
+                    skipped_sites.append(entry)
                     continue
-                if strand == '+': oh_seq = np.add(oh_seq, one_hot_encode(window_sequence))
-                else: oh_seq = np.add(oh_seq, one_hot_encode(window_sequence[::-1]))
                 for read in segment_reads:
                     fragment_length = read.template_length
-                    if frag_range[0] <= abs(fragment_length) <= frag_range[1] and read.is_paired and read. \
+                    abs_length = abs(fragment_length)
+                    if frag_range[0] <= abs_length <= frag_range[1] and read.is_paired and read. \
                             mapping_quality >= map_q and not read.is_duplicate and not read.is_qcfail:
-                        roi_fragment_lengths.append(abs(fragment_length))
                         read_start = read.reference_start - start_pos
                         if read.is_reverse and fragment_length < 0:
                             read_length = read.reference_length
@@ -118,34 +128,55 @@ def generate_profile(region, params):
                             fragment_seq = list(fragment_seq.replace('T', '0').replace('A', '0').replace('C', '1').
                                                 replace('G', '1').replace('N', str(np.random.randint(0, 2))))
                             fragment_gc_content = sum([int(m) for m in fragment_seq])
-                            fragment_bias = gc_bias[np.abs(fragment_length)][fragment_gc_content]
+                            fragment_bias = gc_bias[abs_length][fragment_gc_content]
                         else:
                             fragment_bias = 1
                         # N.B. fragment_start/end are in relative coordinates, not absolute
-                        fragment_cov = np.array(range(fragment_start, fragment_end))
-                        if abs(fragment_length) > 146:
-                            nc_density = fdict[abs(fragment_length)]
+                        fragment_cov = np.arange(fragment_start, fragment_end)
+                        if 500 <= np.take(fragment_cov, abs_length // 2) <= roi_length - 501:  # frag center in window
+                            site_fragment_lengths[abs_length] += 1
+                        if 146 < abs_length <= 500:
+                            nc_density = fdict[abs_length]
                         else:
                             nc_density = None
                         if 0.05 < fragment_bias < 10:
                             if strand == '+':  # positive strand:
-                                for place, index in enumerate(fragment_cov):
-                                    if not 0 <= index < roi_length:
+                                for place, index in enumerate(fragment_cov):  # place and relative loc in fragment
+                                    if not 0 <= index < roi_length:  # ensure overlap
                                         continue
-                                    depth[index] += 1 / fragment_bias
+                                    site_depth[index] += 1 / fragment_bias
                                     if nc_density is not None:
-                                        nc_signal[index] += nc_density[place] / fragment_bias
+                                        site_nc_signal[index] += nc_density[place] / fragment_bias
                                     if 500 <= index <= roi_length - 501:  # no buffer for frag lengths
-                                        fragment_length_profile[index - 500].append(abs(fragment_length))
+                                        site_fragment_length_profile[abs_length, index - 500] += 1
                             else:  # negative strand:
                                 for place, index in enumerate(fragment_cov):
                                     if not 0 <= index < roi_length:
                                         continue
-                                    depth[roi_length - index] += 1 / fragment_bias
+                                    site_depth[roi_length - index] += 1 / fragment_bias
                                     if nc_density is not None:
-                                        nc_signal[roi_length - index] += nc_density[place] / fragment_bias
+                                        site_nc_signal[roi_length - index] += nc_density[place] / fragment_bias
                                     if 500 <= index <= roi_length - 501:  # no buffer for frag lengths
-                                        fragment_length_profile[roi_length - index - 500].append(abs(fragment_length))
+                                        site_fragment_length_profile[abs_length, roi_length - index - 500] += 1
+                # check for egregious outliers in site, and drop site if found
+                raw_median = np.median(site_depth)
+                raw_mad = np.median(np.abs(site_depth - raw_median))
+                if raw_median == 0:
+                    skipped_sites.append(entry)
+                    continue
+                raw_mads_from_median = np.abs((site_depth - raw_median) / raw_mad)
+                if any(x > 10 for x in raw_mads_from_median):  # typical true peaks/dips range from 0-5 MADs
+                    skipped_sites.append(entry)
+                    continue
+                else:
+                    if strand == '+':
+                        oh_seq = np.add(oh_seq, one_hot_encode(window_sequence))
+                    else:
+                        oh_seq = np.add(oh_seq, one_hot_encode(window_sequence[::-1]))
+                    depth += site_depth
+                    nc_signal += site_nc_signal
+                    fragment_lengths += site_fragment_lengths
+                    fragment_length_profile += site_fragment_length_profile
         oh_seq = oh_seq/oh_seq.sum(axis=1, keepdims=True)
     else:  # assemble depth and fragment profiles for sites individually -----------------------------------------------
         bed_tokens = region.strip().split('\t')
@@ -169,12 +200,11 @@ def generate_profile(region, params):
         window_sequence = ref_seq.fetch(bed_tokens[0], start_pos + 500, stop_pos - 500).upper()
         if strand == '+': oh_seq = one_hot_encode(window_sequence)
         else: oh_seq = one_hot_encode(window_sequence[::-1])
-        fragment_length_profile = [[] for _ in range(roi_length - 1000)]
         for read in segment_reads:
             fragment_length = read.template_length
-            if frag_range[0] <= np.abs(fragment_length) <= frag_range[1] and read.is_paired and read.\
+            abs_length = abs(fragment_length)
+            if frag_range[0] <= abs_length <= frag_range[1] and read.is_paired and read.\
                     mapping_quality >= map_q and not read.is_duplicate and not read.is_qcfail:
-                roi_fragment_lengths.append(abs(fragment_length))
                 read_start = read.reference_start - start_pos
                 if read.is_reverse and fragment_length < 0:
                     read_length = read.reference_length
@@ -191,12 +221,14 @@ def generate_profile(region, params):
                     fragment_seq = list(fragment_seq.replace('T', '0').replace('A', '0').replace('C', '1').
                                         replace('G', '1').replace('N', str(np.random.randint(0, 2))))
                     fragment_gc_content = sum([int(m) for m in fragment_seq])
-                    fragment_bias = gc_bias[np.abs(fragment_length)][fragment_gc_content]
+                    fragment_bias = gc_bias[abs_length][fragment_gc_content]
                 else:
                     fragment_bias = 1
-                fragment_cov = np.array(range(fragment_start, fragment_end))
-                if abs(fragment_length) > 146:
-                    nc_density = fdict[abs(fragment_length)]
+                fragment_cov = np.arange(fragment_start, fragment_end)
+                if 500 <= np.take(fragment_cov, abs_length // 2) <= roi_length - 501:  # frag center in window
+                    fragment_lengths[abs_length] += 1
+                if 146 < abs_length <= 500:
+                    nc_density = fdict[abs_length]
                 else:
                     nc_density = None
                 if 0.05 < fragment_bias < 10:
@@ -207,22 +239,22 @@ def generate_profile(region, params):
                         if nc_density is not None:
                             nc_signal[index] += nc_density[place] / fragment_bias
                         if 500 <= index <= roi_length - 501:  # no buffer for frag lengths
-                            fragment_length_profile[index - 500].append(abs(fragment_length))
+                            fragment_length_profile[abs_length, index - 500] += 1
         if strand == "-":
             depth = depth[::-1]
-            fragment_length_profile = fragment_length_profile[::-1]
+            fragment_length_profile = np.fliplr(fragment_length_profile)
             nc_signal = nc_signal[::-1]
     # generate phased profile and phasing/region-level features --------------------------------------------------------
     if np.count_nonzero(depth) < 0.9 * roi_length:  # skip sites with less than 90% base coverage
-        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
-               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
+               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, []
     mean_depth = np.mean(depth[500:-500])
     fourier = rfft(nc_signal)
     freqs = rfftfreq(roi_length)
     range_1 = [idx for idx, val in enumerate(freqs) if low_1 <= val <= high_1]
     range_2 = [idx for idx, val in enumerate(freqs) if low_2 <= val <= high_2]
-    primary_amp_1 = np.mean(np.abs(fourier[range_1])) / roi_length
-    primary_amp_2 = np.mean(np.abs(fourier[range_2])) / roi_length
+    primary_amp_1 = np.mean(abs(fourier[range_1])) / roi_length
+    primary_amp_2 = np.mean(abs(fourier[range_2])) / roi_length
     if primary_amp_1 > 0 and primary_amp_2 > 0:
         np_score = primary_amp_2 / primary_amp_1
     else:
@@ -240,8 +272,8 @@ def generate_profile(region, params):
     signal_mean = np.mean(phased_signal)
     var_range = np.max(phased_signal) - np.min(phased_signal)
     if signal_mean == 0 or var_range == 0:
-        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, \
-               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
+               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, []
     var_rat = var_range / np.max(phased_signal)
     max_values, peaks, min_values, troughs = local_peaks(phased_signal, nc_signal)
     peak_profile = np.zeros(roi_length - 1000, dtype=int)
@@ -255,7 +287,7 @@ def generate_profile(region, params):
         inflection = phased_signal[inflection_loc]
         if not np.isnan(inflection_loc):
             peak_profile[inflection_loc] = 3
-            cd_mean = inflection / signal_mean
+            inflection_depth = inflection / signal_mean
             left_max_loc, right_max_loc = nearest_peaks(inflection_loc, peaks)
             if not np.isnan(left_max_loc) and not np.isnan(right_max_loc):
                 peak_profile[left_max_loc] = -2
@@ -268,9 +300,10 @@ def generate_profile(region, params):
             else:
                 flank_diff, minus_one_loc, plus_one_loc = np.nan, np.nan, np.nan
         else:
-            cd_mean, flank_diff, minus_one_loc, plus_one_loc, inflection_het = np.nan, np.nan, np.nan, np.nan, np.nan
+            inflection_depth, flank_diff, minus_one_loc, plus_one_loc, inflection_het =\
+                np.nan, np.nan, np.nan, np.nan, np.nan
     else:
-        cd_mean, flank_diff, minus_one_loc, plus_one_loc, inflection_loc, inflection_het =\
+        inflection_depth, flank_diff, minus_one_loc, plus_one_loc, inflection_loc, inflection_het =\
             np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
     if len(max_values) < 1 or len(peaks) < 2:
         np_period = np.nan
@@ -279,35 +312,28 @@ def generate_profile(region, params):
         np_period = (peaks[-1] - peaks[0]) / len(peaks)
         np_amp = (np.mean(max_values) - np.mean(min_values)) / signal_mean
     # generate fragment profiles and fragmentation features ------------------------------------------------------------
-    frag_mean = np.mean(roi_fragment_lengths)
-    frag_std = np.std(roi_fragment_lengths)
-    frag_mad = np.median(np.absolute(roi_fragment_lengths - np.median(roi_fragment_lengths)))
-    frag_rat = frag_ratio(roi_fragment_lengths)
-    frag_ent = dirichlet_normalized_entropy(roi_fragment_lengths, roi_fragment_lengths)
-    # fragment profiles
-    shan_profile = point_entropy(roi_fragment_lengths, fragment_length_profile)
-    ratio_profile = [frag_ratio(point_frags) for point_frags in fragment_length_profile]
-    mf_profile = [np.mean(point_frags) if len(point_frags) > 0 else np.nan for point_frags in fragment_length_profile]
-    mad_profile = [np.median(np.absolute(point_frags - np.median(point_frags))) if len(point_frags) != 0 else np.nan
-                   for point_frags in fragment_length_profile]
-    hetero_profile = [len(set(point_frags)) / len(point_frags) if len(point_frags) != 0 else 0
-                      for point_frags in fragment_length_profile]
-    if not np.isnan(inflection_loc) and np.mean(hetero_profile) > 0:
-        inflection_het = np.mean(hetero_profile[(inflection_loc - 5):(inflection_loc + 5)]) / np.mean(hetero_profile)
+    bin_range = list(range(15, 500, 5))  # hardcoded for dict-based analyses of range 15-500
+    frag_mean, frag_std, frag_med, frag_mad, frag_rat, frag_div, frag_ent = frag_metrics(fragment_lengths, bin_range)
+    # fragment profiles | 7 x len(window) where the 7 ordered are: mean, stdev, median, mad, ratio, diversity, entropy
+    signal_metrics = np.apply_along_axis(frag_metrics, axis=0, arr=fragment_length_profile, bins=bin_range)
+    signal_metrics[6, :] /= frag_ent  # normalize point entropy by window entropy
+    if not np.isnan(inflection_loc):
+        inflection_div = np.mean(signal_metrics[6, (inflection_loc - 5):(inflection_loc + 5)]) /\
+                         np.mean(signal_metrics[6, :])
         inflection_loc = inflection_loc - int(window/2)
     else:
-        inflection_het = np.nan
+        inflection_div = np.nan
     # sequence profile
     seq_profile = np.delete(oh_seq, 0, 1)  # remove the N row
     # combine and save profiles ----------------------------------------------------------------------------------------
     if window is None and (roi_length - 1000) > 20000:  # do not print profiles longer than 20kb to avoid memory issues
         out_array = np.nan
     else:
-        signal_array = np.column_stack((depth, phased_signal, nc_signal, mf_profile, shan_profile,
-                                        hetero_profile, mad_profile, ratio_profile, peak_profile))
-        out_array = np.concatenate((signal_array, seq_profile), axis=1)
-    return site, frag_mean, frag_std, frag_mad, frag_rat, frag_ent, np_score, np_period, np_amp, mean_depth, var_rat,\
-           cd_mean, flank_diff, inflection_loc, inflection_het, plus_one_loc, minus_one_loc, out_array
+        signal_array = np.row_stack((depth, nc_signal, phased_signal,  signal_metrics, peak_profile))
+        out_array = np.concatenate((signal_array, seq_profile.T), axis=0)
+    return site, frag_mean, frag_std, frag_med, frag_mad, frag_rat, frag_div, frag_ent, np_score, np_period, np_amp,\
+           mean_depth, var_rat, plus_one_loc, minus_one_loc, flank_diff, inflection_loc, inflection_depth,\
+           inflection_div, out_array, skipped_sites
 
 
 def main():
@@ -315,7 +341,8 @@ def main():
     Takes in input parameters for a single sample Triton run, evaluates the site list format, manages breaking up
     sites into chunks to be run in parallel with generate_profile(), then combines outputs from each core and saves
     them to two files: sample_name_TritonFeatures.tsv and sample_name_TritonProfiles.npz containing region-level
-    features and signal profiles, respectively.
+    features and signal profiles, respectively. In composite mode, an additional file sample_name_SkippedSites.bed
+    will be output with skipped sites (containing MAD peaks > 10) if sites were skipped.
     """
     def str2bool(v):
         """
@@ -342,8 +369,8 @@ def main():
             Returns:
                 int or None
         """
-        if isinstance(v, int):
-            return v
+        if v.isdigit():
+            return int(v)
         else:
             return None
 
@@ -364,8 +391,8 @@ def main():
                         type=str2int, default=2000)
     parser.add_argument('-s', '--composite', help='whether to run in composite-site mode', type=str2bool, default=False)
     parser.add_argument('-d', '--frag_dict', help='dictionary of probable nucleosome center-frag displacements,'
-                                                  'default=../nc_info/NCDict.pkl',
-                        required=False, default='/fh/fast/ha_g/user/rpatton/scripts/Triton/nc_info/NCDict.pkl')
+                                                  'default=nc_info/NCDict.pkl',
+                        required=False, default='nc_info/NCDict.pkl')
     args = parser.parse_args()
 
     print('Loading input files . . .')
@@ -478,30 +505,39 @@ def main():
     print('Merging and saving results . . .')
     signal_dict = {}
     fm = {sample_name: {'sample': sample_name}}
+    all_skipped_sites = []
     for result in results:
         fm[sample_name][result[0] + '_fragment-mean'] = result[1]
         fm[sample_name][result[0] + '_fragment-stdev'] = result[2]
-        fm[sample_name][result[0] + '_fragment-mad'] = result[3]
-        fm[sample_name][result[0] + '_fragment-ratio'] = result[4]
-        fm[sample_name][result[0] + '_fragment-entropy'] = result[5]
-        fm[sample_name][result[0] + '_np-score'] = result[6]
-        fm[sample_name][result[0] + '_np-period'] = result[7]
-        fm[sample_name][result[0] + '_np-amplitude'] = result[8]
-        fm[sample_name][result[0] + '_mean-depth'] = result[9]
-        fm[sample_name][result[0] + '_var-ratio'] = result[10]
-        fm[sample_name][result[0] + '_central-depth'] = result[11]
-        fm[sample_name][result[0] + '_plus-minus-ratio'] = result[12]
-        fm[sample_name][result[0] + '_central-loc'] = result[13]
-        fm[sample_name][result[0] + '_central-heterogeneity'] = result[14]
-        fm[sample_name][result[0] + '_plus-one-pos'] = result[15]
-        fm[sample_name][result[0] + '_minus-one-pos'] = result[16]
-        signal_dict[result[0]] = result[17]
+        fm[sample_name][result[0] + '_fragment-median'] = result[3]
+        fm[sample_name][result[0] + '_fragment-mad'] = result[4]
+        fm[sample_name][result[0] + '_fragment-ratio'] = result[5]
+        fm[sample_name][result[0] + '_fragment-diversity'] = result[6]
+        fm[sample_name][result[0] + '_fragment-entropy'] = result[7]
+        fm[sample_name][result[0] + '_np-score'] = result[8]
+        fm[sample_name][result[0] + '_np-period'] = result[9]
+        fm[sample_name][result[0] + '_np-amplitude'] = result[10]
+        fm[sample_name][result[0] + '_mean-depth'] = result[11]
+        fm[sample_name][result[0] + '_var-ratio'] = result[12]
+        fm[sample_name][result[0] + '_plus-one-pos'] = result[13]
+        fm[sample_name][result[0] + '_minus-one-pos'] = result[14]
+        fm[sample_name][result[0] + '_plus-minus-ratio'] = result[15]
+        fm[sample_name][result[0] + '_central-loc'] = result[16]
+        fm[sample_name][result[0] + '_central-depth'] = result[17]
+        fm[sample_name][result[0] + '_central-diversity'] = result[18]
+        signal_dict[result[0]] = result[19]
+        if len(result) == 21 and result[20]:
+            all_skipped_sites.append(result[20])
     df = pd.DataFrame(fm)
     out_file = results_dir + '/' + sample_name + '_TritonFeatures.tsv'
     if not os.path.exists(results_dir):
         os.mkdir(results_dir)
     np.savez_compressed(results_dir + '/' + sample_name + '_TritonProfiles', **signal_dict)
     df.to_csv(out_file, sep='\t')
+    if all_skipped_sites:  # (is not empty)
+        all_skipped_sites = [item for sublist in all_skipped_sites for item in sublist]
+        skipped_df = pd.DataFrame([x.strip().split('\t') for x in all_skipped_sites], columns=header)
+        skipped_df.to_csv(results_dir + '/' + sample_name + '_SkippedSites.bed', sep='\t', index=False)
 
     print('Finished')
 

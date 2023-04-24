@@ -45,6 +45,7 @@ def extract_features(data, site, features):
         feature_vals = []
         for feature in features:
             if feature == 'zero-depth':
+                print(df[df['loc'].isin(zero_range)])
                 zero_depth = np.nanmean(df[df['loc'].isin(zero_range)]['phased-signal'].values)
                 feature_vals.append(zero_depth)
             elif feature == 'zero-heterogeneity':
@@ -103,6 +104,7 @@ def main():
 
     out_dfs = []
 
+    # TODO: something doesn't work when doing individual!
     if len(input_path) == 1:  # individual sample
         test_data = np.load(input_path[0])
         sample = os.path.basename(input_path[0]).split('_TritonProfiles.npz')[0]
