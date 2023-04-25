@@ -48,35 +48,44 @@ def get_gc_bias_dict(bias_path):
         return None
 
 
-def frag_metrics(frag_lengths, bins):
+def frag_metrics(frag_lengths, bins, reduce=False):
     """
-    Returns the mean, standard deviation, median absolute deviation, and ratio of short (f <= 150) to long (151 <= f)*
-    fragment lengths given an input of fragment length counts (see below).
+    Returns the mean, standard deviation, median, median absolute deviation, ratio of short (f <= 150)
+    to long (151 <= f)*, diversity, and Shannon entropy of fragment lengths given an input of fragment length counts.
     * Used to be short (f <= 120) to long (140 <= f <= 250)
         Parameters:
             frag_lengths (list/array): 1D array of fragment length counts, where the index is the fragment length
             bins (list): list of bin boundaries
+            reduce (bool): if true, only output ratio, diversity, and entropy (save time on signal profiles)
         Returns:
             mean, stdev, MAD, ratio (float, float, int, float)
     """
     total_count = np.sum(frag_lengths)
-    if total_count < 10:  # fewer than 10 overlapping reads - too noisy to be of use.
-        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-    mean = sum([idx * val for idx, val in enumerate(frag_lengths)]) / total_count
-    stdev = np.sqrt(sum([val * (idx - mean)**2 for idx, val in enumerate(frag_lengths)]) / total_count)
-    median = 0
-    while np.sum(frag_lengths[0:(median + 1)]) < (total_count / 2):
-        median += 1
-    ads = np.zeros(len(frag_lengths))  # ordered absolute deviation counts
-    for idx, val in enumerate(frag_lengths):
-        ads[np.abs(idx - median)] += val
-    mad = 0
-    while np.sum(ads[0:(mad + 1)]) < (total_count / 2):
-        mad += 1
-    ratio = np.sum(frag_lengths[:151]) / np.sum(frag_lengths[151:])
-    diversity = np.count_nonzero(frag_lengths) / total_count
-    entropy = shannon_entropy(frag_lengths, bins)
-    return mean, stdev, median, mad, ratio, diversity, entropy
+    if reduce:
+        if total_count < 10:  # fewer than 10 overlapping reads - too noisy to be of use.
+            return np.nan, np.nan, np.nan
+        ratio = np.sum(frag_lengths[:151]) / np.sum(frag_lengths[151:])
+        diversity = np.count_nonzero(frag_lengths) / total_count
+        entropy = shannon_entropy(frag_lengths, bins)
+        return ratio, diversity, entropy
+    else:
+        if total_count < 10:  # fewer than 10 overlapping reads - too noisy to be of use.
+            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+        mean = sum([idx * val for idx, val in enumerate(frag_lengths)]) / total_count
+        stdev = np.sqrt(sum([val * (idx - mean)**2 for idx, val in enumerate(frag_lengths)]) / total_count)
+        median = 0
+        while np.sum(frag_lengths[0:(median + 1)]) < (total_count / 2):
+            median += 1
+        ads = np.zeros(len(frag_lengths))  # ordered absolute deviation counts
+        for idx, val in enumerate(frag_lengths):
+            ads[np.abs(idx - median)] += val
+        mad = 0
+        while np.sum(ads[0:(mad + 1)]) < (total_count / 2):
+            mad += 1
+        ratio = np.sum(frag_lengths[:151]) / np.sum(frag_lengths[151:])
+        diversity = np.count_nonzero(frag_lengths) / total_count
+        entropy = shannon_entropy(frag_lengths, bins)
+        return mean, stdev, median, mad, ratio, diversity, entropy
 
 
 def shannon_entropy(counts, bins):

@@ -54,18 +54,14 @@ def generate_profile(region, params):
                 1: Depth (GC-corrected, if provided)
                 2: Probable nucleosome center profile (fragment length re-weighted depth)
                 3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
-                4: Fragment lengths' mean
-                5: Fragment lengths' standard deviation
-                6: Fragment lengths' median
-                7: fragment lengths' MAD (Median Absolute Deviation)
-                8: Fragment lengths' short:long ratio (x <= 150 / x > 150)
-                9: Fragment lengths' diversity (unique fragment lengths / total fragments)
-                10: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)
-                11: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
-                12: A (Adenine) frequency**
-                13: C (Cytosine) frequency**
-                14: G (Guanine) frequency**
-                15: T (Tyrosine) frequency**
+                4: Fragment lengths' short:long ratio (x <= 150 / x > 150)
+                5: Fragment lengths' diversity (unique fragment lengths / total fragments)
+                6: Fragment lengths' Shannon Entropy (normalized by window Shannon Entropy)
+                7: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
+                8: A (Adenine) frequency**
+                9: C (Cytosine) frequency**
+                10: G (Guanine) frequency**
+                11: T (Tyrosine) frequency**
             skipped-sites: list of annotation lines skipped due to outlier peaks with MAD > 10 (composite only)
             * these features are output as np.nan if window == None
             ** sequence is based on the reference, not the reads
@@ -314,12 +310,12 @@ def generate_profile(region, params):
     # generate fragment profiles and fragmentation features ------------------------------------------------------------
     bin_range = list(range(15, 500, 5))  # hardcoded for dict-based analyses of range 15-500
     frag_mean, frag_std, frag_med, frag_mad, frag_rat, frag_div, frag_ent = frag_metrics(fragment_lengths, bin_range)
-    # fragment profiles | 7 x len(window) where the 7 ordered are: mean, stdev, median, mad, ratio, diversity, entropy
-    signal_metrics = np.apply_along_axis(frag_metrics, axis=0, arr=fragment_length_profile, bins=bin_range)
-    signal_metrics[6, :] /= frag_ent  # normalize point entropy by window entropy
+    # fragment profiles | 3 x len(window) where the 3 ordered are: ratio, diversity, entropy
+    signal_metrics = np.apply_along_axis(frag_metrics, axis=0, arr=fragment_length_profile, bins=bin_range, reduce=True)
+    signal_metrics[2, :] /= frag_ent  # normalize point entropy by window entropy
     if not np.isnan(inflection_loc):
-        inflection_div = np.mean(signal_metrics[6, (inflection_loc - 5):(inflection_loc + 5)]) /\
-                         np.mean(signal_metrics[6, :])
+        inflection_div = np.mean(signal_metrics[1, (inflection_loc - 5):(inflection_loc + 5)]) /\
+                         np.mean(signal_metrics[1, :])
         inflection_loc = inflection_loc - int(window/2)
     else:
         inflection_div = np.nan

@@ -8,18 +8,14 @@ N.B. the numpy array ordering of profile objects:
 1: Depth (GC-corrected, if provided)
 2: Probable nucleosome center profile (fragment length re-weighted depth)
 3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
-4: Fragment lengths' mean
-5: Fragment lengths' standard deviation
-6: Fragment lengths' median
-7: fragment lengths' MAD (Median Absolute Deviation)
-8: Fragment lengths' short:long ratio (x <= 150 / x > 150)
-9: Fragment lengths' diversity (unique fragment lengths / total fragments)
-10: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)
-11: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
-12: A (Adenine) frequency**
-13: C (Cytosine) frequency**
-14: G (Guanine) frequency**
-15: T (Tyrosine) frequency**
+4: Fragment lengths' short:long ratio (x <= 150 / x > 150)
+5: Fragment lengths' diversity (unique fragment lengths / total fragments)
+6: Fragment lengths' Shannon Entropy (normalized by window Shannon Entropy)
+7: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
+8: A (Adenine) frequency**
+9: C (Cytosine) frequency**
+10: G (Guanine) frequency**
+11: T (Tyrosine) frequency**
 """
 
 
@@ -30,15 +26,13 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-mean', 'frag-stdev', 'frag-median', 'frag-mad', 'frag-ratio',
-        'frag-diversity', 'frag-entropy',  'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']
+cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy',
+        'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']
 # signals to normalize to mean=1
-norm_cols = ['depth', 'nuc-centers', 'phased-signal']
-# norm_cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-mean', 'frag-stdev',
-#              'frag-median', 'frag-mad', 'frag-ratio', 'frag-diversity', 'frag-entropy']
+norm_cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy']
 
 
-def plot_profiles(name, data, plot_mode, palette=None, show_inflection=True):
+def plot_profiles(name, data, plot_mode, palette=None, show_inflection=False):
     """
     Plots all profiles specified with plot_mode in one figure.
         Parameters:
@@ -46,27 +40,33 @@ def plot_profiles(name, data, plot_mode, palette=None, show_inflection=True):
             data (pandas long df): signal profile(s) from Triton
             plot_mode (string): name of plotting mode (signal, all, DHS)
             palette (target:color dictionary): palette for subtypes if categories is passed
+            show_inflection (bool): whether to plot vertical lines showing the inflection and +/-1 nucleosome positions
     """
     xmin, xmax = data['loc'].min(), data['loc'].max() + 1
     df_peaks = data[data['profile'] == 'peaks']
     if plot_mode == 'all':
         data = data[~data['profile'].isin(['a-freq', 'c-freq', 'g-freq', 't-freq', 'peaks'])]
     elif plot_mode == 'signal':
-        data = data[data['profile'] == 'signal']
+        data = data[data['profile'] == 'phased-signal']
     else:
         data = data[data['profile'].isin(['depth', 'phased-signal', 'frag-diversity'])]
 
     if palette is not None:
-        sea = sns.FacetGrid(data, row='profile', hue='label', despine=False, height=2, aspect=4, palette=palette,
+        sea = sns.FacetGrid(data, row='profile', hue='label', despine=False, height=3, aspect=3, palette=palette,
                             sharey=False, legend_out=True)
     else:
-        sea = sns.FacetGrid(data, row='profile', hue='label', despine=False, height=2, aspect=4, sharey=False,
+        sea = sns.FacetGrid(data, row='profile', hue='label', despine=False, height=3, aspect=3, sharey=False,
                             legend_out=True)
 
-    sea.map(sns.lineplot, 'loc', 'value', alpha=0.8, legend='full', n_boot=100)
+    sea.map(sns.lineplot, 'loc', 'value', alpha=0.8, legend='full', n_boot=100)  # n_boot effects speed substantially
     sea.add_legend()
     if show_inflection and palette is not None:
-        ax = sea.axes.flatten()[1]
+        if plot_mode == 'all':
+            ax = sea.axes.flatten()[2]
+        elif plot_mode == 'signal':
+            ax = sea.axes.flatten()[0]
+        else:
+            ax = sea.axes.flatten()[1]
         for subtype in data['label'].unique():
             sub_df = df_peaks[df_peaks['label'] == subtype]
             minus_locs = sub_df.loc[sub_df['value'] == -2, 'loc'].values
@@ -76,12 +76,12 @@ def plot_profiles(name, data, plot_mode, palette=None, show_inflection=True):
                 m_mean, m_std = np.mean(minus_locs), np.std(minus_locs)
                 p_mean, p_std = np.mean(plus_locs), np.std(plus_locs)
                 i_mean, i_std = np.mean(inflect_locs), np.std(inflect_locs)
-                ax.axvspan(m_mean - m_std, m_mean + m_std, alpha=0.1, color=palette[subtype])
-                ax.axvline(x=m_mean, alpha=0.6, color=palette[subtype])
-                ax.axvspan(p_mean - p_std, p_mean + p_std, alpha=0.1, color=palette[subtype])
-                ax.axvline(x=p_mean, alpha=0.6, color=palette[subtype])
-                ax.axvspan(i_mean - i_std, i_mean + i_std, alpha=0.1, color=palette[subtype])
-                ax.axvline(x=i_mean, alpha=0.6, color=palette[subtype])
+                ax.axvspan(m_mean - m_std, m_mean + m_std, alpha=0.05, color=palette[subtype])
+                ax.axvline(x=m_mean, alpha=0.3, color=palette[subtype], ls='-')
+                ax.axvspan(p_mean - p_std, p_mean + p_std, alpha=0.05, color=palette[subtype])
+                ax.axvline(x=p_mean, alpha=0.3, color=palette[subtype], ls='-')
+                ax.axvspan(i_mean - i_std, i_mean + i_std, alpha=0.05, color=palette[subtype])
+                ax.axvline(x=i_mean, alpha=0.3, color=palette[subtype])
     sea.set(xlim=(xmin, xmax))
     plt.savefig(name + '-Profiles_' + plot_mode + '.pdf', bbox_inches="tight")
     plt.close()
@@ -136,7 +136,7 @@ def main():
     sites_path = args.sites
     window = args.window
 
-    print('### Running triton_plotters.py in ' + plot_mode + ' mode.')
+    print('### Running triton_plotters.py in "' + plot_mode + '" mode.')
 
     if categories is not None:
         categories = pd.read_table(categories, sep='\t', header=None)
@@ -167,7 +167,9 @@ def main():
                     if sample in categories.keys():
                         tdf['label'] = categories[sample]
                     else:
-                        tdf['label'] = tdf['sample']
+                        tdf['label'] = np.nan
+                else:
+                    tdf['label'] = sample
                 for col in norm_cols:
                     tdf[col] = normalize_data(tdf[col])
             if len(dfs) > 1:

@@ -19,18 +19,14 @@ Nucleotide-resolution profiles include:
     1: Depth (GC-corrected, if provided)  
     2: Probable nucleosome center profile (fragment length re-weighted depth)  
     3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)  
-    4: Fragment lengths' mean  
-    5: Fragment lengths' standard deviation  
-    6: Fragment lengths' median  
-    7: fragment lengths' MAD (Median Absolute Deviation)  
-    8: Fragment lengths' short:long ratio (x <= 150 / x > 150)  
-    9: Fragment lengths' diversity (unique fragment lengths / total fragments)  
-    10: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)  
-    11: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***  
-    12: A (Adenine) frequency**  
-    13: C (Cytosine) frequency**  
-    14: G (Guanine) frequency**  
-    15: T (Tyrosine) frequency**  
+    4: Fragment lengths' short:long ratio (x <= 150 / x > 150)  
+    5: Fragment lengths' diversity (unique fragment lengths / total fragments, i.e. multiset support / cardinality)  
+    6: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)  
+    7: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***  
+    8: A (Adenine) frequency**  
+    9: C (Cytosine) frequency**  
+    10: G (Guanine) frequency**  
+    11: T (Tyrosine) frequency**  
   
 Triton region-level features are output as a .tsv file and include:
 
@@ -41,10 +37,10 @@ Triton region-level features are output as a .tsv file and include:
     fragment-median: fragment lengths' median  
     fragment-mad: fragment lengths' MAD (Median Absolute Deviation)  
     fragment-ratio: fragment lengths' short:long ratio (x <= 150 / x > 150)  
-    fragment-diversity: fragment lengths' diversity (unique fragment lengths / total fragments)  
+    fragment-diversity: fragment lengths' diversity (unique fragment lengths / total fragments, i.e. multiset support / cardinality)  
     fragment-entropy: fragment lengths' Shannon entropy  
         ### Region-level features (phasing) ###  
-    np-score: Nucleosome Phasing score  
+    np-score: Nucleosome Phasing Score (NPS)  
     np-period: phased-nucleosome period  
     np-amplitude: phased-nucleosome mean amplitude  
         ### Region-level features (profile-based) ###  
@@ -54,8 +50,8 @@ Triton region-level features are output as a .tsv file and include:
     minus-one-pos*: location relative to central-loc of minus-one nucleosome  
     plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome  
     central-loc*: location of central inflection relative to window center (0)  
-    central-depth*: phased signal value at the central-loc (with mean in region set to 1)  
-    central-diversity*: normalized fragment heterogeneity value in the +/-5 bp region about the central-loc  
+    central-depth*: window-normalized phased signal value at the central-loc (with mean in region set to 1)  
+    central-diversity*: window-normalized fragment diversity value in the +/-5 bp region about the central-loc  
     
  When run in composite mode Triton will also output a SkippedSites.bed for each samples, containing individual site
  coordinates for sites skipped due to outlier coverage (MAD > 10 in any region).
