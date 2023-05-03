@@ -71,7 +71,6 @@ def generate_profile(region, params):
     bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack, fdict = params
     bam = pysam.AlignmentFile(bam_path, 'rb')
     ref_seq = pysam.FastaFile(ref_seq_path)
-    fragment_length_profile = np.zeros((frag_range[1] + 1, window))
     fragment_lengths = np.zeros(frag_range[1] + 1)
     skipped_sites = []
     if stack:  # assemble depth and fragment profiles for composite sites ----------------------------------------------
@@ -79,6 +78,7 @@ def generate_profile(region, params):
         roi_length = window + 1000  # 500 bp buffers are added for a smooth FFT in the ROI
         depth, nc_signal = np.zeros(roi_length), np.zeros(roi_length)
         oh_seq = np.zeros((window, 5))
+        fragment_length_profile = np.zeros((frag_range[1] + 1, window))
         with open(region.strip(), 'r') as sites_file:
             for entry in sites_file:  # iterate through regions in this particular BED file
                 site_depth, site_nc_signal = np.zeros(roi_length), np.zeros(roi_length)
@@ -186,10 +186,12 @@ def generate_profile(region, params):
             center_pos = int(bed_tokens[pos_idx])
             start_pos = center_pos - int(window / 2) - 500
             stop_pos = center_pos + int(window / 2) + 500
+            fragment_length_profile = np.zeros((frag_range[1] + 1, window))
         else:
             start_pos = int(bed_tokens[start_idx]) - 500
             stop_pos = int(bed_tokens[stop_idx]) + 500
             roi_length = stop_pos - start_pos
+            fragment_length_profile = np.zeros((frag_range[1] + 1, roi_length - 1000))
         depth, nc_signal = np.zeros(roi_length), np.zeros(roi_length)
         # process all fragments falling inside the ROI
         segment_reads = bam.fetch(bed_tokens[0], start_pos, stop_pos)
@@ -322,7 +324,7 @@ def generate_profile(region, params):
     # sequence profile
     seq_profile = np.delete(oh_seq, 0, 1)  # remove the N row
     # combine and save profiles ----------------------------------------------------------------------------------------
-    if window is None and (roi_length - 1000) > 20000:  # do not print profiles longer than 20kb to avoid memory issues
+    if window is None and (roi_length - 1000) > 25000:  # do not print profiles longer than 20kb to avoid memory issues
         out_array = np.nan
     else:
         signal_array = np.row_stack((depth, nc_signal, phased_signal,  signal_metrics, peak_profile))
