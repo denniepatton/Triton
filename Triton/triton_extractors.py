@@ -1,25 +1,21 @@
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
-# v1.0.1, 04/24/2023
+# v0.2.0, 06/29/2023
 
-# utilities for extracting (modifiable) additional features from Triton signal output files
+# utility for extracting (modifiable) additional features from Triton signal output files
 
 """
 N.B. the numpy array ordering of profile objects:
 1: Depth (GC-corrected, if provided)
 2: Probable nucleosome center profile (fragment length re-weighted depth)
 3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
-4: Fragment lengths' mean
-5: Fragment lengths' standard deviation
-6: Fragment lengths' median
-7: fragment lengths' MAD (Median Absolute Deviation)
-8: Fragment lengths' short:long ratio (x <= 150 / x > 150)
-9: Fragment lengths' diversity (unique fragment lengths / total fragments)
-10: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)
-11: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
-12: A (Adenine) frequency**
-13: C (Cytosine) frequency**
-14: G (Guanine) frequency**
-15: T (Tyrosine) frequency**
+4: Fragment lengths' short:long ratio (x <= 150 / x > 150)
+5: Fragment lengths' diversity (unique fragment lengths / total fragments)
+6: Fragment lengths' Shannon Entropy (normalized by window Shannon Entropy)
+7: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
+8: A (Adenine) frequency**
+9: C (Cytosine) frequency**
+10: G (Guanine) frequency**
+11: T (Tyrosine) frequency**
 """
 
 import os

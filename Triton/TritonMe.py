@@ -1,6 +1,9 @@
 # Robert Patton, rpatton@fredhutch.org
 # v0.2.1, 07/05/2023
 
+# this is a working version to incorporate methylation statistics from Bismark output BAM files
+# N.B. that methylation metrics, like fragmentomics, are NOT GC-corrected
+
 import os
 import sys
 import pysam
@@ -48,6 +51,11 @@ def generate_profile(region, params):
             central-loc*: location of central inflection relative to window center (0)
             central-depth*: phased signal value at the central-loc (with mean in region set to 1)
             central-diversity*: normalized fragment heterogeneity value in the +/-5 bp region around the central-loc
+                ### Methylation Features (extracted from read coverage only, all fragment sizes, no GC) ###
+            cpg-methylation: fraction of methylated CpGs in the window
+            chg-methylation: fraction of methylated CHGs in the window
+            cgg-methylation: fraction of methylated CHHs in the window
+            cng-methylation: fraction of methylated CN/CHNs in the window
                 ### Region-level profiles (all are un-normalized/raw except for entropy; nt-resolution) ###
             numpy array: shape 11xN containing:
                 1: Depth (GC-corrected, if provided)
@@ -57,10 +65,14 @@ def generate_profile(region, params):
                 5: Fragment lengths' diversity (unique fragment lengths / total fragments)
                 6: Fragment lengths' Shannon Entropy (normalized by window Shannon Entropy)
                 7: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
-                8: A (Adenine) frequency**
-                9: C (Cytosine) frequency**
-                10: G (Guanine) frequency**
-                11: T (Tyrosine) frequency**
+                8: CpG methylation frequency (NaN if no overlapping targets)
+                9: CHG methylation frequency (NaN if no overlapping targets)
+                10: CHH methylation frequency (NaN if no overlapping targets)
+                11: CN/CHN methylation frequency (NaN if no overlapping targets)
+                12: A (Adenine) frequency**
+                13: C (Cytosine) frequency**
+                14: G (Guanine) frequency**
+                15: T (Tyrosine) frequency**
             skipped-sites: list of annotation lines skipped due to outlier peaks with MAD > 10 (composite only)
             * these features are centered region specific, and output as np.nan if window == None
             ** sequence report is based on the reference sequence and does not include SNVs
@@ -78,12 +90,14 @@ def generate_profile(region, params):
         roi_length = window + 1000  # 500 bp buffers are added to each end for a smooth FFT at the ROI edges
         depth, nc_signal = np.zeros(roi_length), np.zeros(roi_length)
         oh_seq = np.zeros((window, 5))  # bp-frequency-encoded sequence array
+        me_array = np.zeros((window, 8), dtype=int)  # [z, Z, x, X, h, H, u, U] total counts
         fragment_length_profile = np.zeros((frag_range[1] + 1, window), dtype=int)  # nt-level fragment histogram matrix
         with open(region.strip(), 'r') as sites_file:
             for entry in sites_file:  # iterate through regions in this particular BED file
                 site_depth, site_nc_signal = np.zeros(roi_length), np.zeros(roi_length)
                 site_fragment_lengths = np.zeros(frag_range[1] + 1, dtype=int)
                 site_fragment_length_profile = np.zeros((frag_range[1] + 1, window), dtype=int)
+                site_me_array = np.zeros((window, 8), dtype=int)  # [z, Z, x, X, h, H, u, U] total counts
                 bed_tokens = entry.strip().split('\t')
                 if not bed_tokens[pos_idx].isdigit():  # header or typo line
                     continue
@@ -110,7 +124,7 @@ def generate_profile(region, params):
                     if frag_range[0] <= abs_length <= frag_range[1] and read.is_paired and read.is_read1 and \
                             read.mapping_quality >= map_q and not read.is_duplicate and not read.is_qcfail:
                         # only consider (paired) read 1 to avoid double counting fragments
-                        read_start = read.reference_start - start_pos
+                        read_start = read.reference_start - start_pos  # relative to site location
                         if read.is_reverse and fragment_length < 0:  # N.B. fragment_start/end are in relative coords
                             read_length = read.reference_length
                             fragment_start = read_start + read_length + fragment_length
@@ -147,6 +161,7 @@ def generate_profile(region, params):
                                     if 500 <= index <= roi_length - 501:  # no buffer for frag lengths
                                         site_fragment_length_profile[abs_length, index - 500] += 1
                             else:  # negative strand:
+                                # N.B. all this is doing is re-orienting depth along the + strand for compositing
                                 for place, index in enumerate(fragment_cov):
                                     if not 0 <= index < roi_length:
                                         continue
@@ -155,6 +170,24 @@ def generate_profile(region, params):
                                         site_nc_signal[roi_length - index] += nc_density[place] / fragment_bias
                                     if 500 <= index <= roi_length - 501:  # no buffer for frag lengths
                                         site_fragment_length_profile[abs_length, roi_length - index - 500] += 1
+                    # additional step only for methylation
+                    if frag_range[0] <= abs_length <= frag_range[1] and read.is_paired and \
+                            read.mapping_quality >= map_q and not read.is_duplicate and not read.is_qcfail:
+                        read_me = methyl_encode(read.get_tag(tag="XM"))
+                        read_cov = np.arange(read.reference_start - (start_pos + 500),
+                                             read.reference_end - (start_pos + 500))
+                        if len(read_me) == len(read_cov):
+                            if strand == '+':  # positive strand:
+                                for place, index in enumerate(read_cov):  # place and relative loc in read
+                                    if not 0 <= index < window:  # ensure overlap
+                                        continue
+                                    site_me_array[index] += read_me[place]
+                            else:  # negative strand:
+                                # N.B. all this is doing is re-orienting depth along the + strand for compositing
+                                for place, index in enumerate(read_cov):
+                                    if not 0 <= index < window:
+                                        continue
+                                    site_me_array[window - index] += read_me[place]
                 # check for egregious outliers in site, and drop site if found
                 if np.sum(site_depth) == 0:
                     skipped_sites.append(entry.strip() + '\tzero_coverage')
@@ -177,6 +210,7 @@ def generate_profile(region, params):
                     nc_signal += site_nc_signal
                     fragment_lengths += site_fragment_lengths
                     fragment_length_profile += site_fragment_length_profile
+                    me_array += site_me_array
         oh_seq = oh_seq/oh_seq.sum(axis=1, keepdims=True)
     else:  # assemble depth and fragment profiles for sites individually -----------------------------------------------
         bed_tokens = region.strip().split('\t')
@@ -197,6 +231,7 @@ def generate_profile(region, params):
             roi_length = stop_pos - start_pos
             fragment_length_profile = np.zeros((frag_range[1] + 1, roi_length - 1000), dtype=int)
         depth, nc_signal = np.zeros(roi_length), np.zeros(roi_length)
+        me_array = np.zeros((roi_length - 1000, 8), dtype=int)  # [z, Z, x, X, h, H, u, U] total counts
         # process all fragments falling inside the site
         site_reads = bam.fetch(bed_tokens[0], start_pos, stop_pos)
         window_sequence = ref_seq.fetch(bed_tokens[0], start_pos + 500, stop_pos - 500).upper()
@@ -243,14 +278,26 @@ def generate_profile(region, params):
                             nc_signal[index] += nc_density[place] / fragment_bias
                         if 500 <= index <= roi_length - 501:  # no buffer for frag lengths
                             fragment_length_profile[abs_length, index - 500] += 1
+            # additional step only for methylation
+            if frag_range[0] <= abs_length <= frag_range[1] and read.is_paired and \
+                    read.mapping_quality >= map_q and not read.is_duplicate and not read.is_qcfail:
+                read_me = methyl_encode(read.get_tag(tag="XM"))
+                read_cov = np.arange(read.reference_start - (start_pos + 500),
+                                     read.reference_end - (start_pos + 500))
+                if len(read_me) == len(read_cov):
+                    for place, index in enumerate(read_cov):  # place and relative loc in read
+                        if not 0 <= index <= window:  # ensure overlap
+                            continue
+                        me_array[index] += read_me[place]
         if strand == "-":
             depth = depth[::-1]
             fragment_length_profile = np.fliplr(fragment_length_profile)
             nc_signal = nc_signal[::-1]
+            me_array = np.fliplr(me_array)
     # generate phased profile and phasing/region-level features --------------------------------------------------------
     if np.count_nonzero(depth) < 0.9 * roi_length:  # skip sites with less than 90% base coverage
-        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
-               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, []
+        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
+               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, []
     mean_depth = np.mean(depth[500:-500])
     fourier = rfft(nc_signal)
     freqs = rfftfreq(roi_length)
@@ -275,8 +322,8 @@ def generate_profile(region, params):
     signal_mean = np.mean(phased_signal)
     var_range = np.max(phased_signal) - np.min(phased_signal)
     if signal_mean == 0 or var_range == 0:
-        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,\
-               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, []
+        return site, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, \
+               np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, []
     var_rat = var_range / np.max(phased_signal)
     max_values, peaks, min_values, troughs = local_peaks(phased_signal, nc_signal)
     peak_profile = np.zeros(roi_length - 1000, dtype=int)
@@ -330,15 +377,34 @@ def generate_profile(region, params):
         inflection_div = np.nan
     # sequence profile
     seq_profile = np.delete(oh_seq, 0, 1)  # remove the N row
+    # generate methylation profiles and methylation features -----------------------------------------------------------
+    if me_array[0].sum() != 0:
+        cpg_meth = me_array[1].sum() / (me_array[0].sum() + me_array[1].sum())
+    else:
+        cpg_meth = np.nan
+    if me_array[2].sum() != 0:
+        chg_meth = me_array[3].sum() / (me_array[2].sum() + me_array[3].sum())
+    else:
+        chg_meth = np.nan
+    if me_array[4].sum():
+        cgg_meth = me_array[5].sum() / (me_array[4].sum() + me_array[5].sum())
+    else:
+        cgg_meth = np.nan
+    if me_array[6].sum() != 0:
+        cng_meth = me_array[7].sum() / (me_array[6].sum() + me_array[7].sum())
+    else:
+        cng_meth = np.nan
+    meth_metrics = np.apply_along_axis(me_metrics, axis=1, arr=me_array)
     # combine and save profiles ----------------------------------------------------------------------------------------
     if window is None and (roi_length - 1000) > 10000:  # do not print profiles longer than 10kb to avoid memory issues
         out_array = np.nan
     else:
-        signal_array = np.row_stack((depth, nc_signal, phased_signal,  signal_metrics, peak_profile))
+        signal_array = np.row_stack((depth, nc_signal, phased_signal,  signal_metrics, peak_profile, meth_metrics.T))
         out_array = np.concatenate((signal_array, seq_profile.T), axis=0)
+    print(out_array)
     return site, frag_mean, frag_std, frag_med, frag_mad, frag_rat, frag_div, frag_ent, np_score, np_period, np_amp,\
            mean_depth, var_rat, plus_one_loc, minus_one_loc, flank_diff, inflection_loc, inflection_depth,\
-           inflection_div, out_array, skipped_sites
+           inflection_div, cpg_meth, chg_meth, cgg_meth, cng_meth, out_array, skipped_sites
 
 
 def main():
@@ -509,13 +575,13 @@ def main():
         print('More CPUs passed than sites - scaling down to ' + str(len(sites)))
         cpus = len(sites)
 
-    with Pool(cpus) as pool:
-        results = list(pool.imap_unordered(partial(generate_profile, params=params), sites, len(sites) // cpus))
+    # with Pool(cpus) as pool:
+    #     results = list(pool.imap_unordered(partial(generate_profile, params=params), sites, len(sites) // cpus))
 
     # below is for running NOT in parallel (testing mode)
-    # results = []
-    # for site in sites:
-    #     results += [generate_profile(site, params)]
+    results = []
+    for site in sites:
+        results += [generate_profile(site, params)]
 
     print('Merging and saving results . . .')
     signal_dict = {}
@@ -540,9 +606,13 @@ def main():
         fm[sample_name][result[0] + '_central-loc'] = result[16]
         fm[sample_name][result[0] + '_central-depth'] = result[17]
         fm[sample_name][result[0] + '_central-diversity'] = result[18]
-        signal_dict[result[0]] = result[19]
-        if len(result) == 21 and result[20]:  # skipped sites list exists and is not empty
-            all_skipped_sites.append([line + '\t' + result[0] for line in result[20]])
+        fm[sample_name][result[0] + '_cpg-methylation'] = result[19]
+        fm[sample_name][result[0] + '_chg-methylation'] = result[20]
+        fm[sample_name][result[0] + '_cgg-methylation'] = result[21]
+        fm[sample_name][result[0] + '_cng-methylation'] = result[22]
+        signal_dict[result[0]] = result[23]
+        if len(result) == 25 and result[24]:  # skipped sites list exists and is not empty
+            all_skipped_sites.append([line + '\t' + result[0] for line in result[24]])
     df = pd.DataFrame(fm)
     out_file = results_dir + '/' + sample_name + '_TritonFeatures.tsv'
     if not os.path.exists(results_dir):

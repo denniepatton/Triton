@@ -1,7 +1,9 @@
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
-# v2.0.0, 04/12/2023
+# v0.2.1, 06/30/2023
 
-# utilities for plotting Triton profile outputs
+# Utility for plotting Triton profile outputs
+# N.B. Peak locations and nucleotide-frequency plotting is not supported
+# (but feel free to modify code to include them)
 
 """
 N.B. the numpy array ordering of profile objects:
@@ -16,6 +18,23 @@ N.B. the numpy array ordering of profile objects:
 9: C (Cytosine) frequency**
 10: G (Guanine) frequency**
 11: T (Tyrosine) frequency**
+
+eliff TritonMe (methylation mode, using Bismark-aligned outputs:
+1: Depth (GC-corrected, if provided)
+2: Probable nucleosome center profile (fragment length re-weighted depth)
+3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
+4: Fragment lengths' short:long ratio (x <= 150 / x > 150)
+5: Fragment lengths' diversity (unique fragment lengths / total fragments)
+6: Fragment lengths' Shannon Entropy (normalized by window Shannon Entropy)
+7: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
+8: CpG methylation frequency (NaN if no overlapping targets)
+9: CHG methylation frequency (NaN if no overlapping targets)
+10: CHH methylation frequency (NaN if no overlapping targets)
+11: CN/CHN methylation frequency (NaN if no overlapping targets)
+12: A (Adenine) frequency**
+13: C (Cytosine) frequency**
+14: G (Guanine) frequency**
+15: T (Tyrosine) frequency**
 """
 
 
@@ -28,8 +47,11 @@ import matplotlib.pyplot as plt
 
 cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy',
         'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']
-# signals to normalize to mean=1
+cols_me = ['depth', 'nuc-centers', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy', 'peaks',
+           'CpG-Me-freq', 'CHG-ME-freq', 'CHH-Me-freq', 'CHN-Me-freq', 'a-freq', 'c-freq', 'g-freq', 't-freq']
+# signals to normalize
 norm_cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy']
+smooth_cols = ['CpG-Me-freq', 'CHG-ME-freq', 'CHH-Me-freq', 'CHN-Me-freq']
 
 
 def plot_profiles(name, data, plot_mode, palette=None, show_inflection=False):
@@ -48,6 +70,9 @@ def plot_profiles(name, data, plot_mode, palette=None, show_inflection=False):
         data = data[~data['profile'].isin(['a-freq', 'c-freq', 'g-freq', 't-freq', 'peaks'])]
     elif plot_mode == 'signal':
         data = data[data['profile'] == 'phased-signal']
+    elif plot_mode == 'TME':
+        data = data[data['profile'].isin(['depth', 'phased-signal', 'frag-diversity',
+                                          'CpG-Me-freq', 'CHG-ME-freq', 'CHH-Me-freq', 'CHN-Me-freq'])]
     else:
         data = data[data['profile'].isin(['depth', 'phased-signal', 'frag-diversity'])]
 
@@ -82,6 +107,10 @@ def plot_profiles(name, data, plot_mode, palette=None, show_inflection=False):
                 ax.axvline(x=p_mean, alpha=0.3, color=palette[subtype], ls='-')
                 ax.axvspan(i_mean - i_std, i_mean + i_std, alpha=0.05, color=palette[subtype])
                 ax.axvline(x=i_mean, alpha=0.3, color=palette[subtype])
+    if plot_mode == 'TME':
+        for ax_index in range(3, 7):
+            ax = sea.axes.flatten()[ax_index]
+            ax.set_ylim(0, 1)
     sea.set(xlim=(xmin, xmax))
     plt.savefig(name + '-Profiles_' + plot_mode + '.pdf', bbox_inches="tight")
     plt.close()
@@ -89,11 +118,70 @@ def plot_profiles(name, data, plot_mode, palette=None, show_inflection=False):
 
 
 def normalize_data(data):
+    """
+    Normalizes signal (re-scales from 0-1)
+        Parameters:
+            data (vector-like array): signal profile from Triton
+        Returns:
+            normalized_data
+    """
+    min_val = np.min(data)
+    max_val = np.max(data)
+    if max_val - min_val == 0:
+        return data - min_val  # non-signal: 0s
+    else:
+        return (data - min_val) / (max_val - min_val)
+
+
+def standardize_data(data):
+    """
+    Standardizes signal, AKA transforms to Z-score (centers the signal and re-scales)
+        Parameters:
+            data (vector-like array): signal profile from Triton
+        Returns:
+            standardized_data
+    """
+    mean_val = np.mean(data)
+    stdev_val = np.std(data)
+    if stdev_val == 0:
+        return data - mean_val  # non-signal: 0s
+    else:
+        return (data - mean_val) / stdev_val
+
+
+def scale_data(data):
+    """
+    Scales signal mean to 1 (preserves potential differences in magnitude of signal variation)
+        Parameters:
+            data (vector-like array): signal profile from Triton
+        Returns:
+            scaled_data
+    """
     mean_val = np.mean(data)
     if mean_val == 0:
         return data
     else:
         return data / mean_val
+
+
+def smooth_data(data, window=15):
+    """
+    Performs scanning window mean smoothing to replicate binned outputs
+        Parameters:
+            data (vector-like array): signal profile from Triton
+            window (int): window-size for smoothing
+        Returns:
+            smoothed_data
+    """
+    smoothed_data = np.zeros(len(data))
+    for i in range(len(data)):
+        if i < int(window / 2):
+            smoothed_data[i] = np.mean(data[:(window - 1)])
+        elif i > (len(data) - window):
+            smoothed_data[i] = np.mean(data[-window:])
+        else:
+            smoothed_data[i] = np.mean(data[(i - window // 2):(i + window // 2)])
+    return smoothed_data
 
 
 # below is for a non-issue iterating through "files"
@@ -102,9 +190,10 @@ def main():
     parser = argparse.ArgumentParser(description='\n### triton_plotters.py ### plots Triton output profiles')
     parser.add_argument('-i', '--input', help='one or more TritonProfiles.npz files; wildcards (e.g. '
                                               'results/*.npz) are OK.', nargs='*', required=True)
-    parser.add_argument('-m', '--mode', help='plotting mode (all: all profiles, signal: only smoothed signal profile,'
-                                             ' DSH: raw depth, signal, and heterogeneity profiles). DEFAULT = DHS.',
-                        required=False, default='DHA')
+    parser.add_argument('-m', '--mode', help='plotting mode (all: all profiles, signal: only phased signal profile, '
+                                             'RSD: raw depth, signal, and fragment diversity profiles, TME: ONLY iff '
+                                             'TritonMe was used, plots RSD + Me frequencies). DEFAULT = RSD.',
+                        required=False, default='RSD')
     parser.add_argument('-c', '--categories', help='tsv file containing matched sample names (column 1) and '
                                                    'categories (column 2) to color samples by composite '
                                                    'categories rather than individually, with a .95 confidence '
@@ -127,6 +216,11 @@ def main():
                         required=False, default=None)
     parser.add_argument('-w', '--window', help='if set, data is "windowed" - sets 0-point to the middle instead of the　'
                                                '5\' end. DEFAULT = False.', action='store_true')
+    parser.add_argument('-n', '--normalization', help='signal-normalization method to use at the site + sample level: '
+                                                      '"raw" (raw values), "norm" (true normalization from 0-1), '
+                                                      '"stand" (standardize, i.e. z-score), "scale" (scale mean to 1). '
+                                                      '"scale" is recommended, and mirrors Triton feature-extraction. '
+                                                      'DEFAULT = "scale"', required=False, default='scale')
 
     args = parser.parse_args()
     input_path = args.input
@@ -135,8 +229,9 @@ def main():
     palette_file = args.palette
     sites_path = args.sites
     window = args.window
+    norm = args.normalization
 
-    print('### Running triton_plotters.py in "' + plot_mode + '" mode.')
+    print('### Running triton_plotters.py in "' + plot_mode + '" mode using "' + norm + '" signal scaling.')
 
     if categories is not None:
         categories = pd.read_table(categories, sep='\t', header=None)
@@ -156,8 +251,12 @@ def main():
     tests_data = [np.load(path) for path in input_path]
     for site in tests_data[0].files:
         if sites_path is None or site in sites:
-            dfs = [pd.DataFrame(test_data[site].T, columns=cols)
-                   for test_data in tests_data if len(test_data[site].shape) == 2]
+            if plot_mode == 'TME':
+                dfs = [pd.DataFrame(test_data[site].T, columns=cols_me) for test_data in tests_data if
+                       len(test_data[site].shape) == 2]
+            else:
+                dfs = [pd.DataFrame(test_data[site].T, columns=cols) for test_data in tests_data if
+                       len(test_data[site].shape) == 2]
             for tdf, sample in zip(dfs, samples):
                 tdf['loc'] = np.arange(len(tdf))
                 if window:
@@ -170,8 +269,20 @@ def main():
                         tdf['label'] = np.nan
                 else:
                     tdf['label'] = sample
-                for col in norm_cols:
-                    tdf[col] = normalize_data(tdf[col])
+                if norm == 'raw':
+                    continue
+                elif norm == 'norm':
+                    for col in norm_cols:
+                        tdf[col] = normalize_data(tdf[col])
+                elif norm == 'stand':
+                    for col in norm_cols:
+                        tdf[col] = standardize_data(tdf[col])
+                else:
+                    for col in norm_cols:
+                        tdf[col] = scale_data(tdf[col])
+                if plot_mode == 'TME':
+                    for col in smooth_cols:
+                        tdf[col] = smooth_data(tdf[col])
             if len(dfs) > 1:
                 df = pd.concat(dfs)
             else:
@@ -187,7 +298,10 @@ def main():
                     print(samples)
                     print('Exiting.')
                     quit()
-            df = pd.melt(df, id_vars=['sample', 'loc', 'label'], value_vars=cols, var_name='profile')
+            if plot_mode == 'TME':
+                df = pd.melt(df, id_vars=['sample', 'loc', 'label'], value_vars=cols_me, var_name='profile')
+            else:
+                df = pd.melt(df, id_vars=['sample', 'loc', 'label'], value_vars=cols, var_name='profile')
             plot_profiles(site, df, plot_mode, palette=palette)
 
 

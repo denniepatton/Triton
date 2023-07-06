@@ -1,10 +1,11 @@
 # Robert Patton, rpatton@fredhutch.org
-# v2.0.1, 04/24/2023
+# v0.2.0, 06/29/2023
 
 import numpy as np
 import pandas as pd
 
-mapping = dict(zip("NACGT", range(5)))  # sequence mapping for one-hot encoding
+mapping = dict(zip("NACGT", range(5)))  # sequence mapping for one-hot encoding nucleotides
+me_mapping = dict(zip(".zZxXhHuU", range(9)))  # sequence mapping for one-hot encoding methylation tags from Bismark
 
 
 def one_hot_encode(seq):
@@ -19,9 +20,21 @@ def one_hot_encode(seq):
     return np.eye(5)[seq2]
 
 
+def methyl_encode(seq):
+    """
+    One-hot encode a methylation tag sequence from bismark (as a binary numpy array)
+        Parameters:
+            seq (string): string of methylation calls to one-hot encode
+        Returns:
+            numpy array: one-hot encoded methylation tags of size 8xN
+    """
+    seq2 = [me_mapping[me] for me in seq]
+    return np.delete(np.eye(9)[seq2], 0, 1).astype(dtype=int)
+
+
 def get_gc_bias_dict(bias_path):
     """
-    (Modified from Griffin pipeline, credit Anna-Lisa Doebley)
+    (Modified from Griffin pipeline, credit: Anna-Lisa Doebley)
     One-hot encode a nucleotide sequence (as a binary numpy array)
         Parameters:
             bias_path (string): path to GC bias output by Griffin
@@ -59,21 +72,23 @@ def frag_metrics(frag_lengths, bins, reduce=False):
             reduce (bool): if true, only output ratio, diversity, and entropy (save time on signal profiles)
         Returns:
             mean, stdev, MAD, ratio (float, float, int, float)
+    N.B. since a histogram-array is being passed, I am doing some "fancy math" to save time and space
     """
     total_count = np.sum(frag_lengths)
+    unique_count = np.count_nonzero(frag_lengths)
     if reduce:
-        if total_count < 10:  # fewer than 10 overlapping reads - too noisy to be of use.
+        if unique_count < 2 or np.sum(frag_lengths[151:]) == 0:  # BARE MINIMUM to get real metrics
             return np.nan, np.nan, np.nan
         ratio = np.sum(frag_lengths[:151]) / np.sum(frag_lengths[151:])
-        diversity = np.count_nonzero(frag_lengths) / total_count
+        diversity = unique_count / total_count
         entropy = shannon_entropy(frag_lengths, bins)
         return ratio, diversity, entropy
     else:
-        if total_count < 10:  # fewer than 10 overlapping reads - too noisy to be of use.
+        if unique_count < 2 or np.sum(frag_lengths[151:]) == 0:  # BARE MINIMUM to get real metrics
             return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
         mean = sum([idx * val for idx, val in enumerate(frag_lengths)]) / total_count
         stdev = np.sqrt(sum([val * (idx - mean)**2 for idx, val in enumerate(frag_lengths)]) / total_count)
-        median = 0
+        median = 0  # set to 0 the iterate until the median is reached
         while np.sum(frag_lengths[0:(median + 1)]) < (total_count / 2):
             median += 1
         ads = np.zeros(len(frag_lengths))  # ordered absolute deviation counts
@@ -83,9 +98,36 @@ def frag_metrics(frag_lengths, bins, reduce=False):
         while np.sum(ads[0:(mad + 1)]) < (total_count / 2):
             mad += 1
         ratio = np.sum(frag_lengths[:151]) / np.sum(frag_lengths[151:])
-        diversity = np.count_nonzero(frag_lengths) / total_count
+        diversity = unique_count / total_count
         entropy = shannon_entropy(frag_lengths, bins)
         return mean, stdev, median, mad, ratio, diversity, entropy
+
+
+def me_metrics(oh_vals):
+    """
+    Returns the methylation proportion in 4 contexts, or NaN if no base methylation possible.
+        Parameters:
+            oh_vals (numpy array): 1D array of me tag counts [z, Z, x, X, h, H, u, U]
+        Returns:
+            CpG, CHG, CHH, CHN (float, float, float, float)
+    """
+    if oh_vals[0] == 0:
+        cpg = np.nan
+    else:
+        cpg = oh_vals[1] / (oh_vals[0] + oh_vals[1])
+    if oh_vals[2] == 0:
+        chg = np.nan
+    else:
+        chg = oh_vals[3] / (oh_vals[2] + oh_vals[3])
+    if oh_vals[4] == 0:
+        chh = np.nan
+    else:
+        chh = oh_vals[5] / (oh_vals[4] + oh_vals[5])
+    if oh_vals[6] == 0:
+        chn = np.nan
+    else:
+        chn = oh_vals[7] / (oh_vals[6] + oh_vals[7])
+    return cpg, chg, chh, chn
 
 
 def shannon_entropy(counts, bins):
@@ -101,16 +143,16 @@ def shannon_entropy(counts, bins):
     total_counts = sum(histogram)
     if total_counts < 2:
         return 0
-    pdf = histogram / sum(histogram)
-    pdf = [p for p in pdf if p != 0.0]
+    pdist = histogram / sum(histogram)
+    pdist = [p for p in pdist if p != 0.0]
     # moments = [p * np.log(p) for p in pdf]  # un-normalized
-    moments = [p * np.log(p) / np.log(total_counts) for p in pdf]  # normalized
+    moments = [p * np.log(p) / np.log(total_counts) for p in pdist]  # locally normalized
     return - sum(moments)
 
 
 def local_peaks(ys, xs):
     """
-    Finds LOCAL (min or max relative to neighbors) given a 1D list/array; only appropriate for very smooth data
+    Finds LOCAL (min or max relative to neighbors) peaks given a 1D list/array; only appropriate for very smooth data
     (E.G. an inverse fourier transform with high frequencies removed)
         Parameters:
             ys (list/array): signal height

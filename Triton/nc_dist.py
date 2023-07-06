@@ -1,8 +1,8 @@
 # Robert Patton, rpatton@fredhutch.org
-# v1.0.1, 04/24/2023
+# v0.2.2, 06/29/2023
 
 # this is a modified version of Triton, designed to output only information about where nucleosomes are located
-# downstream analyses of outputs are used in nc_dict.py
+# downstream analyses of outputs are used in nc_analyze.py
 
 import os
 import sys
@@ -28,7 +28,7 @@ def generate_profile(region, params):
             numpy array: 2D array of counts with (500 - fragment length) indexed rows, and displacement from region
                 center as columns (includes negative displacements)
     """
-    bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack = params
+    bam_path, _, frag_range, _, _, map_q, window, _ = params
     bam = pysam.AlignmentFile(bam_path, 'rb')
     site = os.path.basename(region).split('.')[0]  # use the file name as the feature name
     frag_cents = np.zeros((500, 1000))
@@ -45,8 +45,8 @@ def generate_profile(region, params):
             segment_reads = bam.fetch(chrom, start_pos, stop_pos)
             for read in segment_reads:
                 fragment_length = read.template_length
-                if frag_range[0] <= np.abs(fragment_length) <= frag_range[1] and read.is_paired and read. \
-                        mapping_quality >= map_q and not read.is_duplicate and not read.is_qcfail:
+                if frag_range[0] <= np.abs(fragment_length) <= frag_range[1] and read.is_paired and read.is_read1 and \
+                        read.mapping_quality >= map_q and not read.is_duplicate and not read.is_qcfail:
                     read_start = read.reference_start
                     if read.is_reverse and fragment_length < 0:
                         read_length = read.reference_length
@@ -67,7 +67,7 @@ def generate_profile(region, params):
 def main():
     """
     Takes in input parameters for a single sample Triton run, evaluates the site list format, manages breaking up
-    sites into chunks to be run in parallel with generate_profile(), then combines outputs from each core and saves:
+    sites into chunks to be run in parallel with generate_profile(), then combines outputs from each core and saves
     sample_name_TritonNucPlacementProfiles.npz containing region-level displacement arrays.
     """
     def str2bool(v):
@@ -115,8 +115,6 @@ def main():
     cpus = args.cpus
     window = args.window
     stack = args.composite
-    if not stack:
-        stack = True
 
     print('\n### arguments provided:')
     print('\tsample_name = "' + sample_name + '"')
@@ -133,20 +131,20 @@ def main():
     print('\n')
     sys.stdout.flush()
 
-    gc_bias = get_gc_bias_dict(bias_path)
+    gc_bias = None  # not actually used, but kept in parameters for continuity
+    if not stack:  # must use stacked mode
+        stack = True
+
     global chr_idx, start_idx, stop_idx, site_idx, strand_idx, pos_idx
     if stack and window is None:
         print('ERROR: if using Triton in composite mode a window (-w) must be specified. Exiting.')
         header, sites = None, None
         exit()
-    elif stack and window is not None:
+    else:
         print('Running Triton in composite mode.')
         sites = [region for region in open(sites_path, 'r')]  # a list of BED-like paths
         header = [site for site in open(sites[0].strip(), 'r')].pop(0).strip().split('\t')  # retrieve one header
-    else:
-        print('Running Triton in individual mode.')
-        sites = [region for region in open(sites_path, 'r')]  # a list of regions
-        header = sites.pop(0).strip().split('\t')
+
     # Below checks for standard BED column names and the position column if window=True, updating their indices
     # if necessary. If a non-standard header format is used defaults indices will be used, which may error.
     # In composite mode, each individual BED-like file is assumed to have an identical header/header sorting;
