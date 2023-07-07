@@ -63,9 +63,9 @@ Triton region-level features are output as a .tsv file and include:
  of whatever input is provided with additional "reject_reason" and "site_ID" columns. These sites may then be run in individual mode
  (in which case modifications in the "name" column may be required if identical between sites) to examine reason for removal.
   
-\* these features are only output if a window is set, otherwise np.nan is reported
-\** sequence is based on the reference, not the reads; in composite mode the frequency at each location is reported
-\*** minus-one, plus-one, and inflection locs are only called if a window is set, and supersede peak/trough
+\* these features are only output if a window is set, otherwise np.nan is reported  
+\** sequence is based on the reference, not the reads; in composite mode the frequency at each location is reported  
+\*** minus-one, plus-one, and inflection locs are only called if a window is set, and supersede peak/trough  
 
 ### Uses
 
@@ -85,39 +85,43 @@ Triton may be used as a local Python package, incorporated directly into scripts
 See below for usage details:
 
 ### Inputs to Triton.py:
--n, --sample_name               : sample identifier (string)  
--i, --input                     : input .bam file (path)  
--b, --bias (*optional*)         : input-matched .GC_bias file (path, from Griffin†)  
--a, --annotation                : regions of interest as a BED file or text file containing a list of BED file paths  
-                                  *if "composite" and/or "window" is specified, the BED must contain an additional  "position" column  
-                                  which will be treated as the center for aligning composite regions and defining windows*  
--g, --reference_genome          : reference genome .fa file (path)  
--r, --results_dir               : directory for output (path)  
--q, --map_quality (*optional*)  : minimum read mapping quality to keep (int, default=20)  
--f, --size_range (*optional*)   : fragment size range in bp to keep (int tuple, default=(15, 500))  
--c, --cpus                      : number of CPUs to use for parallel processing of regions (int)  
--w, --window (*optional*)       : size of window to use in bp; required for composite (int, default=2000)  
--s, --composite (*optional*)    : whether to run in composite mode, treating each line of the annotation as a distinct list of regions  
-                                  to overlap, or single mode, in which case the annotation should be a single BED file with each line  
-                                  as a distinct region (bool, default=False)  
--d, frag_dict                   : dictionary of probable nucleosome center locations (displacements within fragments) for given fragment  
-                                  lengths, as a Python binary .pkl file. Triton ships wth a pre-computed dictionary in nc_info/NCDict.pkl,  
-                                  which is called by default. See nc_info for details.
+-n, --sample_name		: sample identifier (string)  
+-i, --input			: input .bam file (path)  
+-b, --bias (*optional*)		: input-matched .GC_bias file (path, from Griffin†)  
+-a, --annotation		: regions of interest as a BED file or text file containing a list of BED file paths  
+				  *if "composite" and/or "window" is specified, the BED must contain an additional  "position" column  
+				  which will be treated as the center for aligning composite regions and defining windows*  
+-g, --reference_genome		: reference genome .fa file (path)  
+-r, --results_dir		: directory for output (path)  
+-q, --map_quality (*optional*)	: minimum read mapping quality to keep (int, default=20)  
+-f, --size_range (*optional*)	: fragment size range in bp to keep (int tuple, default=(15, 500))  
+-c, --cpus			: number of CPUs to use for parallel processing of regions (int)  
+-w, --window (*optional*)	: size of window to use in bp; required for composite (int, default=2000)  
+-s, --composite (*optional*)	: whether to run in composite mode, treating each line of the annotation as a distinct list of regions  
+				  to overlap, or single mode, in which case the annotation should be a single BED file with each line  
+				  as a distinct region (bool, default=False)  
+-d, frag_dict			: dictionary of probable nucleosome center locations (displacements within fragments) for given fragment  
+				  lengths, as a Python binary .pkl file. Triton ships wth a pre-computed dictionary in nc_info/NCDict.pkl,  
+				  which is called by default. See nc_info for details.
 
 ### Inputs (extra details)
 
-input: input .bam files are assumed to be pre-indexed with matching .bam.bai files in the same directory
-bias: GC bias correction is optional but highly recommended; sample-matched .GC_bias files can be generated using Griffin's GC correction method
-available at (<https://github.com/GavinHaLab/Griffin>) 
-annotation: for individual mode this should be a single bed-like file (<https://www.genome.ucsc.edu/FAQ/FAQformat.html#format1>) which contains,
+**input:** input .bam files are assumed to be pre-indexed with matching .bam.bai files in the same directory  
+
+**bias:** GC bias correction is optional but highly recommended; sample-matched .GC_bias files can be generated using Griffin's GC correction method
+available at (<https://github.com/GavinHaLab/Griffin>)  
+
+**annotation:** for individual mode this should be a single bed-like file (<https://www.genome.ucsc.edu/FAQ/FAQformat.html#format1>) which contains,
 at minimum, the following columns: [chrom chromStart chromEnd name/Gene]. If strand is provided that will be used to orient all sites in the positive
 direction; otherwise regions (including in composite sites) will be treated as belonging to the + strand. If a window is specified, a "position"
 column must also be included, which defines the central point for the window. When run in composite mode, instead of passing a single bed-like
 file a text file containing a list of bed-like file locations is needed; each individual file is treated as one composite-site, with reads
 "piled up" across all regions based on stacking fragments in each window. Because a defined window is required for composite mode, each bed-like
-file should contain the additional "position" column.
-reference_genome: reference genome .fa file should match whichever build the samples were aligned to
-window and composite: in individual mode (default, composite=False) window may be set or unset; in the latter case the full region from
+file should contain the additional "position" column.  
+
+**reference_genome:** reference genome .fa file should match whichever build the samples were aligned to  
+
+**window and composite:** in individual mode (default, composite=False) window may be set or unset; in the latter case the full region from
 chromStart:chromStop is used to derive signals and features, but no window-based metrics are output. In composite mode window is required.
 
 ### Contained Scripts:
