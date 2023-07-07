@@ -179,7 +179,7 @@ and overwrite the default NCDict.pkl in future runs.
 
 The BED file used, derived from NucMap, is also available: nc_info/hsNuc_iNPSPeak_bedops-intersect.bed
 
-<img src="nc_info/NucFragDisplacements_FIT.pdf">
+<img src="misc/NucFragDisplacements_FIT.png">
 
 ### Methodology
 
