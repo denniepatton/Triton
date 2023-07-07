@@ -138,13 +138,17 @@ chromStart:chromStop is used to derive signals and features, but no window-based
 #### triton_plotters.py
 triton_plotters.py is provided to allow for immediate plotting of TritonProfiles.npz outputs. It features four main plotting modes:
 
-"all" plots all output signals (excluding nucleotide frequencies):
+"all" plots all output signals (excluding nucleotide frequencies - here the categories option has been specified to group samples with a confidence interval):
+<img src="misc/Example_all.png">
 
 "signal" plots only the phased-nucleosome signal:
+<img src="misc/Example_signal.png">
 
 "RSD" plots Raw (GC-corrected) coverage, phased-nucleosome Signal, and fragment Diversity:
+<img src="misc/Example_RSD.png">
 
 "TME" plots the same signals as "RSD" and also methylation signals; see TritonMe below:
+<img src="misc/Example_TME.png">
 
 triton_plotters.py also features options for grouping samples together, defining color palettes, signal normalization methods,
 and restricting sites. It's a good place to start and modification is encouraged! Run `Python triton_plotters.py -h` for specific options and input
@@ -174,6 +178,8 @@ If the user would like to re-generate NCDict.pkl with their own site list or sam
 and overwrite the default NCDict.pkl in future runs.
 
 The BED file used, derived from NucMap, is also available: nc_info/hsNuc_iNPSPeak_bedops-intersect.bed
+
+<img src="nc_info/NucFragDisplacements_FIT.pdf">
 
 ### Methodology
 
