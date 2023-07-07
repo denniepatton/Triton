@@ -64,7 +64,7 @@ Triton region-level features are output as a .tsv file and include:
  (in which case modifications in the "name" column may be required if identical between sites) to examine reason for removal.
   
 \* these features are only output if a window is set, otherwise np.nan is reported  
-\** sequence is based on the reference, not the reads; in composite mode the frequency at each location is reported  
+\** sequence is based on the reference, not the reads (nt frequency, in composite mode)
 \*** minus-one, plus-one, and inflection locs are only called if a window is set, and supersede peak/trough  
 
 ### Uses
@@ -77,7 +77,7 @@ e.g. Convolutional Neural Networks (CNNs).
 
 ### Publications
 
-<[https://doi.org/10.1158/2159-8290.CD-22-0692](https://doi.org/10.1158/2159-8290.CD-22-0692)>
+[Nucleosome Patterns in Circulating Tumor DNA Reveal Transcriptional Regulation of Advanced Prostate Cancer Phenotypes](https://doi.org/10.1158/2159-8290.CD-22-0692)
 
 ## Usage
 
@@ -85,6 +85,7 @@ Triton may be used as a local Python package, incorporated directly into scripts
 See below for usage details:
 
 ### Inputs to Triton.py:
+'''
 -n, --sample_name		: sample identifier (string)  
 -i, --input			: input .bam file (path)  
 -b, --bias (*optional*)		: input-matched .GC_bias file (path, from Griffin†)  
@@ -103,15 +104,15 @@ See below for usage details:
 -d, frag_dict			: dictionary of probable nucleosome center locations (displacements within fragments) for given fragment  
 				  lengths, as a Python binary .pkl file. Triton ships wth a pre-computed dictionary in nc_info/NCDict.pkl,  
 				  which is called by default. See nc_info for details.
-
-### Inputs (extra details)
+'''
+### Inputs (extra details):
 
 **input:** input .bam files are assumed to be pre-indexed with matching .bam.bai files in the same directory  
 
 **bias:** GC bias correction is optional but highly recommended; sample-matched .GC_bias files can be generated using Griffin's GC correction method
 available at (<https://github.com/GavinHaLab/Griffin>)  
 
-**annotation:** for individual mode this should be a single bed-like file (<https://www.genome.ucsc.edu/FAQ/FAQformat.html#format1>) which contains,
+**annotation:** for individual mode this should be a single [bed-like file](https://www.genome.ucsc.edu/FAQ/FAQformat.html#format1) which contains,
 at minimum, the following columns: [chrom chromStart chromEnd name/Gene]. If strand is provided that will be used to orient all sites in the positive
 direction; otherwise regions (including in composite sites) will be treated as belonging to the + strand. If a window is specified, a "position"
 column must also be included, which defines the central point for the window. When run in composite mode, instead of passing a single bed-like
@@ -125,14 +126,14 @@ file should contain the additional "position" column.
 chromStart:chromStop is used to derive signals and features, but no window-based metrics are output. In composite mode window is required.
 
 ### Contained Scripts:
-Triton.py | primary script containing the generate_profile() function; takes in inputs and produces outputs  
-TritonMe.py | methylation caller version of Triton for use with Bismark outputs: see TritonMe below  
-triton_helpers.py | contains helper functions called by Triton.py  
-triton_cleanup.py | combines TritonFeatures.tsv output files produced by Triton when run on multiple samples; called by Snakemake(s)  
-triton_plotters.py | plotting utils and functions for TritonProfiles.npz files; use at your own discretion or modify as you see fit!  
-triton_extractors.py | extraction utils for producing additional custom features from signal profiles; modify as you see fit!
-nc_dist.py | a modified version of Triton.py for generating composite nucleosome-center profiles; see nc_info  
-nc_analyze.py | used after nc_dist.py to create the frag_dict and plot results; see nc_info  
+**Triton.py** | primary script containing the generate_profile() function; takes in inputs and produces outputs  
+**TritonMe.py** | methylation caller version of Triton for use with Bismark outputs: see TritonMe below  
+**triton_helpers.py** | contains helper functions called by Triton.py  
+**triton_cleanup.py** | combines TritonFeatures.tsv output files produced by Triton when run on multiple samples; called by Snakemake(s)  
+**triton_plotters.py** | plotting utils and functions for TritonProfiles.npz files; use at your own discretion or modify as you see fit!  
+**triton_extractors.py** | extraction utils for producing additional custom features from signal profiles; modify as you see fit!
+**nc_dist.py** | a modified version of Triton.py for generating composite nucleosome-center profiles; see nc_info  
+**nc_analyze.py** | used after nc_dist.py to create the frag_dict and plot results; see nc_info  
 
 #### triton_plotters.py
 triton_plotters.py is provided to allow for immediate plotting of TritonProfiles.npz outputs. It features four main plotting modes:
@@ -146,7 +147,7 @@ triton_plotters.py is provided to allow for immediate plotting of TritonProfiles
 "TME" plots the same signals as "RSD" and also methylation signals; see TritonMe below:
 
 triton_plotters.py also features options for grouping samples together, defining color palettes, signal normalization methods,
-and restricting sites. It's a good place to start and modification is encouraged! Run Python triton_plotters.py -h for specific options and input
+and restricting sites. It's a good place to start and modification is encouraged! Run `Python triton_plotters.py -h` for specific options and input
 formatting guidance.
 
 #### triton_extractors.py
@@ -188,20 +189,21 @@ Ensure the Python environment meets the requirements found in pythonversion.txt 
 server load the modules indicated at the head of Triton.snakefile
 
 Run the following command to validate, then remove "-np" at the end to initiate:  
-snakemake -s Triton.snakefile --latency-wait 60 --keep-going --cluster-config config/cluster_slurm.yaml --cluster "sbatch -p {cluster.partition} --mem={cluster.mem} -t {cluster.time} -c {cluster.ncpus} -n {cluster.ntasks} -o {cluster.output} -J {cluster.JobName}" -j 40 -np
+`snakemake -s Triton.snakefile --latency-wait 60 --keep-going --cluster-config config/cluster_slurm.yaml --cluster "sbatch -p {cluster.partition} --mem={cluster.mem} -t {cluster.time} -c {cluster.ncpus} -n {cluster.ntasks} -o {cluster.output} -J {cluster.JobName}" -j 40 -np`
 
 ### TO INSTALL AS A PACKAGE
 
 In the repo's main directory, run:  
-pip install .
+`pip install .`
 
 Triton's primary function generate_profile() may now be imported directly into scripts, as well as helper functions.
 
 ### TritonMe (methylation reporting with Triton)
 
-Included is an alternative Triton script, TritonMe, designed to handle Bismark alignment files which also contain methylation call information.
-TritonMe runs an additional step where all reads' methylation calls are recorded at each region's location, including in composite mode, and
-reported as frequency signals and region methylation levels for the four methylation contexts reported by Bismark. To use TritonMe, simply replace
+Included is an alternative Triton script, TritonMe, designed to handle [Bismark](https://www.bioinformatics.babraham.ac.uk/projects/bismark/)
+alignment files which also contain methylation call information. TritonMe runs an additional step where all reads' methylation calls are
+recorded at each region's location, including in composite mode, and reported as frequency signals and region methylation levels for the 
+four methylation contexts reported by Bismark. To use TritonMe, simply replace
 Triton.py with TritonMe.py in your pipeline or utilize the TritonMe.snakefile. TritonMe outputs are:
 
 Nucleotide-resolution profiles include:
@@ -258,7 +260,7 @@ Triton region-level features are output as a .tsv file and include:
  (in which case modifications in the "name" column may be required if identical between sites) to examine reason for removal.
   
 \* these features are only output if a window is set, otherwise np.nan is reported
-\** sequence is based on the reference, not the reads; in composite mode the frequency at each location is reported
+\** sequence is based on the reference, not the reads (nt frequency, in composite mode)
 \*** minus-one, plus-one, and inflection locs are only called if a window is set, and supersede peak/trough
 
 ## Requirements
@@ -271,7 +273,7 @@ If you have any questions or feedback, please contact me at:
 
 ## Acknowledgements
 Triton is developed and maintained by Robert D. Patton in the Gavin Ha Lab, Fred Hutchinson Cancer Center.  
-Anna-Lisa Doebley provided critical input and developed the GC-correction process used in Triton, originally found
+Anna-Lisa Doebley provided input and developed the GC-correction process used in Triton, originally found
 in the Griffin (<https://github.com/GavinHaLab/Griffin>) pipeline.
 
 † Griffin-based GC correction  
