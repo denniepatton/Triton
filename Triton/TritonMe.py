@@ -57,7 +57,7 @@ def generate_profile(region, params):
             cgg-methylation: fraction of methylated CHHs in the window
             cng-methylation: fraction of methylated CN/CHNs in the window
                 ### Region-level profiles (all are un-normalized/raw except for entropy; nt-resolution) ###
-            numpy array: shape 11xN containing:
+            numpy array: shape 15xN containing:
                 1: Depth (GC-corrected, if provided)
                 2: Probable nucleosome center profile (fragment length re-weighted depth)
                 3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
