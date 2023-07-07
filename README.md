@@ -64,7 +64,7 @@ Triton region-level features are output as a .tsv file and include:
  (in which case modifications in the "name" column may be required if identical between sites) to examine reason for removal.
   
 \* these features are only output if a window is set, otherwise np.nan is reported  
-\** sequence is based on the reference, not the reads (nt frequency, in composite mode)
+\** sequence is based on the reference, not the reads (nt frequency, in composite mode)  
 \*** minus-one, plus-one, and inflection locs are only called if a window is set, and supersede peak/trough  
 
 ### Uses
@@ -85,7 +85,7 @@ Triton may be used as a local Python package, incorporated directly into scripts
 See below for usage details:
 
 ### Inputs to Triton.py:
-'''
+```
 -n, --sample_name		: sample identifier (string)  
 -i, --input			: input .bam file (path)  
 -b, --bias (*optional*)		: input-matched .GC_bias file (path, from Griffin†)  
@@ -104,7 +104,7 @@ See below for usage details:
 -d, frag_dict			: dictionary of probable nucleosome center locations (displacements within fragments) for given fragment  
 				  lengths, as a Python binary .pkl file. Triton ships wth a pre-computed dictionary in nc_info/NCDict.pkl,  
 				  which is called by default. See nc_info for details.
-'''
+```
 ### Inputs (extra details):
 
 **input:** input .bam files are assumed to be pre-indexed with matching .bam.bai files in the same directory  
@@ -116,7 +116,7 @@ available at (<https://github.com/GavinHaLab/Griffin>)
 at minimum, the following columns: [chrom chromStart chromEnd name/Gene]. If strand is provided that will be used to orient all sites in the positive
 direction; otherwise regions (including in composite sites) will be treated as belonging to the + strand. If a window is specified, a "position"
 column must also be included, which defines the central point for the window. When run in composite mode, instead of passing a single bed-like
-file a text file containing a list of bed-like file locations is needed; each individual file is treated as one composite-site, with reads
+file, a text file containing a list of bed-like file locations is needed; each individual file is treated as one composite-site, with reads
 "piled up" across all regions based on stacking fragments in each window. Because a defined window is required for composite mode, each bed-like
 file should contain the additional "position" column.  
 
@@ -131,7 +131,7 @@ chromStart:chromStop is used to derive signals and features, but no window-based
 **triton_helpers.py** | contains helper functions called by Triton.py  
 **triton_cleanup.py** | combines TritonFeatures.tsv output files produced by Triton when run on multiple samples; called by Snakemake(s)  
 **triton_plotters.py** | plotting utils and functions for TritonProfiles.npz files; use at your own discretion or modify as you see fit!  
-**triton_extractors.py** | extraction utils for producing additional custom features from signal profiles; modify as you see fit!
+**triton_extractors.py** | extraction utils for producing additional custom features from signal profiles; modify as you see fit!  
 **nc_dist.py** | a modified version of Triton.py for generating composite nucleosome-center profiles; see nc_info  
 **nc_analyze.py** | used after nc_dist.py to create the frag_dict and plot results; see nc_info  
 
@@ -170,12 +170,47 @@ can be found in nc_info along with the iNPS site list and information regarding 
 In general, the results of this analysis dictate that short fragments (~150-210 bp) generally have centers coinciding with nucleosomes,
 while longer fragments tend to bind nucleosome asymmetrically nearer to one end or in a pattern indicative of dinucleosomal binding.
 
-If the user would like to re-generate NCDict.pkl with their own site list or samples, please modify nc_dist.py and nc_plot.py as needed
+If the user would like to re-generate NCDict.pkl with their own site list or samples, please modify nc_dist.py and nc_analyze.py as needed
 and overwrite the default NCDict.pkl in future runs.
 
 The BED file used, derived from NucMap, is also available: nc_info/hsNuc_iNPSPeak_bedops-intersect.bed
 
 ### Methodology
+
+Triton first breaks up the provided annotation into equal-sized groups of sites (individual mode) or equal-sized groups of (sets of)
+sites (composite mode), depending on the number of provided cpus. Each group is then run through the generate_profile() routine,
+which returns site or composite-site region level features and signal arrays, as well as information about any skipped sites when
+run in composite mode. Once all sites have been analyzed for a given sample, output signals and features are re-organized and saved.
+
+Within generate_profile(), [pysam](https://pysam.readthedocs.io/) is used for fast, random bam access in the region(s) of interest and to
+retrieve reference sequence information from the specified fasta file. All reads overlapping each individual site are processed before
+either joining unnormalized coverages across sites, in the case of composite mode, or passing directly to signal and feature analysis.
+Processing consists of retrieveing the site(s) reference sequence, quality control (reads must be paired, meet mapping quality, not be
+duplicate, and fragment lengths must fall in the specified range), GC-correction at the fragment level (if bias is provided), and nucleosome
+position re-weighting. For each site the one-hot encoded nucleotide sequence, (GC-corrected) coverage, (GC-corrected) probable nucleosome 
+positioning, site-level fragment length distribution, positional fragment length distribution (one distribution for fragments overlapping
+each bp) and, if TritonMe is used, bp-resolution methylation count information is produced. These go directly into downstream analysis
+in individual mode, or go through additional site-level quality control in composite mode before being added to the composite total. In
+particular, sites with 0 coverage, 0 median absolute deviation (MAD) in the coverage, or sites with signal > 10 MADs from the median at any point
+are dropped and reported.
+
+N.B. that only paired, uniquely mapped reads are used to infer fragments. All fragments specified and in the 15-500bp default bounds are used
+to generate fragment length distributions, and GC-correction is *not* used. All fragment coverage signals *do* use GC-correction if bias is
+provided, and the lower bound of fragment lengths considered for coverage is 146bp, i.e. the minimum fully wrapped nucleosome coverage.
+
+Following intitial processing, the probable-nucleosome position signal is run through a Fast Fourier Transform (FFT). The mean frequency
+amplitude in two bands corresponding to "small linker" (150-180bp) and "large linker" (180-210bp) is calculated in order to generate the
+nucleosome phasing score (NPS). A low-pass frequency filter (corresponding to a minimum period of 146bp) is then used when taking the signal
+out of frequency space to isolate the fundamental signal originating from phased-nucleosome length repeats or larger while eliminating
+high frequency noise or signal originating from poorly phased (deconstructively overlapping) nucleosome pile-ups. This "phased-nucleosome"
+signal is then used for local peak calling, which is in turn used to find the other phasing and profiling features.
+
+For fragment distributions at both the region and bp-level (for overlapping fragment length metric signals) the fragment lengths' mean,
+standard deviation, median, median absolute deviation (MAD), short:long ratio, diversity score, and Shannon (information) entropy are
+calculated directly from the distribution and reported.
+
+If methylation data is provided, both the region and bp-level frequency of methylation for each type of methylation event are also reported,
+calculated as the fraction of total potential methylation sites with methylation called by Bismark.
 
 ### TO RUN AS A SNAKEMAKE
 
@@ -260,7 +295,7 @@ Triton region-level features are output as a .tsv file and include:
  (in which case modifications in the "name" column may be required if identical between sites) to examine reason for removal.
   
 \* these features are only output if a window is set, otherwise np.nan is reported
-\** sequence is based on the reference, not the reads (nt frequency, in composite mode)
+\** sequence is based on the reference, not the reads (nt frequency, in composite mode)  
 \*** minus-one, plus-one, and inflection locs are only called if a window is set, and supersede peak/trough
 
 ## Requirements
