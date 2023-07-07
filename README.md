@@ -8,7 +8,7 @@ composite genomic regions and outputs both region-level biomarkers and nt-resolu
 Triton conducts nucleotide-resolution profile analyses for cfDNA samples in BAM format, given a list of individual regions of interest (BED containing,
 for example, promoter regions or gene bodies) or list of composite regions of interest sharing a common center (list of BED files each containing, for
 example, binding locations for a single transcription factor). All fragments in each region/composite region are used to find the fragment size
-distribution, coverage, and probabability of a nucleosome center at each point. GC bias correction files from Griffin† may also be incorporated
+distribution, coverage, and probability of a nucleosome center at each point. GC bias correction files from Griffin† may also be incorporated
 for GC correction. Fast Fourier Transforms are then used to isolate well-phased nucleosome derived signal, from which specific features are drawn.
 Triton also accepts Bismark methylation caller output alignment files (see TritonMe) in which case nt-resolution and region-level methylation signals
 are also output.
@@ -23,7 +23,7 @@ Nucleotide-resolution profiles include:
 
     1: Coverage/Depth (GC-corrected, if provided)  
     2: Probable nucleosome center profile (fragment length re-weighted depth)  
-    3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)  
+    3: Phased-nucleosome profile (Fourier-filtered probable nucleosome center profile)  
     4: Fragment lengths' short:long ratio (x <= 150 / x > 150)  
     5: Fragment lengths' diversity (unique fragment lengths / total fragments, i.e. multiset support / cardinality)  
     6: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)  
@@ -69,8 +69,8 @@ Triton region-level features are output as a .tsv file and include:
 
 ### Uses
 
-Triton may be used either as an end point in cfDNA data analysis by outputting ready-to-use features from a given list of regions or
-composite regions, or as processing step for further feature extraction from output profiles. Biomarkers reported directly from
+Triton may be used either as an endpoint in cfDNA data analysis by outputting ready-to-use features from a given list of regions or
+composite regions, or as a processing step for further feature extraction from output profiles. Biomarkers reported directly from
 Triton can be used to distinguish cancer lineages (see Publications) in traditional machine learning approaches, specific profiles
 may be plotted for qualitative analysis, or profile outputs may be utilized in signal-based analyses and learning structures, 
 e.g. Convolutional Neural Networks (CNNs). 
@@ -102,7 +102,7 @@ See below for usage details:
 				  to overlap, or single mode, in which case the annotation should be a single BED file with each line  
 				  as a distinct region (bool, default=False)  
 -d, frag_dict			: dictionary of probable nucleosome center locations (displacements within fragments) for given fragment  
-				  lengths, as a Python binary .pkl file. Triton ships wth a pre-computed dictionary in nc_info/NCDict.pkl,  
+				  lengths, as a Python binary .pkl file. Triton ships with a pre-computed dictionary in nc_info/NCDict.pkl,  
 				  which is called by default. See nc_info for details.
 ```
 ### Inputs (extra details):
@@ -168,7 +168,7 @@ double-Gaussian for capturing dinucleosomes. Raw and fit weight-matrix visualiza
 can be found in nc_info along with the iNPS site list and information regarding the healthy donor samples used.
 
 In general, the results of this analysis dictate that short fragments (~150-210 bp) generally have centers coinciding with nucleosomes,
-while longer fragments tend to bind nucleosome asymmetrically nearer to one end or in a pattern indicative of dinucleosomal binding.
+while longer fragments tend to bind nucleosomes asymmetrically nearer to one end or in a pattern indicative of dinucleosomal binding.
 
 If the user would like to re-generate NCDict.pkl with their own site list or samples, please modify nc_dist.py and nc_analyze.py as needed
 and overwrite the default NCDict.pkl in future runs.
@@ -179,13 +179,13 @@ The BED file used, derived from NucMap, is also available: nc_info/hsNuc_iNPSPea
 
 Triton first breaks up the provided annotation into equal-sized groups of sites (individual mode) or equal-sized groups of (sets of)
 sites (composite mode), depending on the number of provided cpus. Each group is then run through the generate_profile() routine,
-which returns site or composite-site region level features and signal arrays, as well as information about any skipped sites when
-run in composite mode. Once all sites have been analyzed for a given sample, output signals and features are re-organized and saved.
+which returns site or composite-site region-level features and signal arrays, as well as information about any skipped sites when
+run in composite mode. Once all sites have been analyzed for a given sample, output signals and features are reorganized and saved.
 
 Within generate_profile(), [pysam](https://pysam.readthedocs.io/) is used for fast, random bam access in the region(s) of interest and to
 retrieve reference sequence information from the specified fasta file. All reads overlapping each individual site are processed before
 either joining unnormalized coverages across sites, in the case of composite mode, or passing directly to signal and feature analysis.
-Processing consists of retrieveing the site(s) reference sequence, quality control (reads must be paired, meet mapping quality, not be
+Processing consists of retrieving the site(s) reference sequence, quality control (reads must be paired, meet mapping quality, not be
 duplicate, and fragment lengths must fall in the specified range), GC-correction at the fragment level (if bias is provided), and nucleosome
 position re-weighting. For each site the one-hot encoded nucleotide sequence, (GC-corrected) coverage, (GC-corrected) probable nucleosome 
 positioning, site-level fragment length distribution, positional fragment length distribution (one distribution for fragments overlapping
@@ -198,11 +198,11 @@ N.B. that only paired, uniquely mapped reads are used to infer fragments. All fr
 to generate fragment length distributions, and GC-correction is *not* used. All fragment coverage signals *do* use GC-correction if bias is
 provided, and the lower bound of fragment lengths considered for coverage is 146bp, i.e. the minimum fully wrapped nucleosome coverage.
 
-Following intitial processing, the probable-nucleosome position signal is run through a Fast Fourier Transform (FFT). The mean frequency
+Following initial processing, the probable-nucleosome position signal is run through a Fast Fourier Transform (FFT). The mean frequency
 amplitude in two bands corresponding to "small linker" (150-180bp) and "large linker" (180-210bp) is calculated in order to generate the
 nucleosome phasing score (NPS). A low-pass frequency filter (corresponding to a minimum period of 146bp) is then used when taking the signal
 out of frequency space to isolate the fundamental signal originating from phased-nucleosome length repeats or larger while eliminating
-high frequency noise or signal originating from poorly phased (deconstructively overlapping) nucleosome pile-ups. This "phased-nucleosome"
+high-frequency noise or signal originating from poorly phased (deconstructively overlapping) nucleosome pile-ups. This "phased-nucleosome"
 signal is then used for local peak calling, which is in turn used to find the other phasing and profiling features.
 
 For fragment distributions at both the region and bp-level (for overlapping fragment length metric signals) the fragment lengths' mean,
@@ -216,9 +216,9 @@ calculated as the fraction of total potential methylation sites with methylation
 
 Ensure the following files are up-to-date for your system and needs (default values for Fred Hutch systems are included)
 
-config/config.yaml: specify inputs as detailed above, and ensure the annotation and cluster_slurm paths are correct  
-config/cluster_slurm.yaml: specify computational resources for your system  
-config/samples.yaml: see example_samples.yaml for formatting; also output by default by Griffin GC correction  
+**config/config.yaml**: specify inputs as detailed above, and ensure the annotation and cluster_slurm paths are correct  
+**config/cluster_slurm.yaml**: specify computational resources for your system  
+**config/samples.yaml**: see example_samples.yaml for formatting; also output by default by Griffin GC correction  
 
 Ensure the Python environment meets the requirements found in pythonversion.txt and requirements.txt; if you are on a Fred Hutch
 server load the modules indicated at the head of Triton.snakefile
@@ -245,7 +245,7 @@ Nucleotide-resolution profiles include:
 
     1: Coverage/Depth (GC-corrected, if provided)  
     2: Probable nucleosome center profile (fragment length re-weighted depth)  
-    3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)  
+    3: Phased-nucleosome profile (Fourier-filtered probable nucleosome center profile)  
     4: Fragment lengths' short:long ratio (x <= 150 / x > 150)  
     5: Fragment lengths' diversity (unique fragment lengths / total fragments, i.e. multiset support / cardinality)  
     6: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)   
@@ -294,9 +294,9 @@ Triton region-level features are output as a .tsv file and include:
  of whatever input is provided with additional "reject_reason" and "site_ID" columns. These sites may then be run in individual mode
  (in which case modifications in the "name" column may be required if identical between sites) to examine reason for removal.
   
-\* these features are only output if a window is set, otherwise np.nan is reported
+\* these features are only output if a window is set, otherwise np.nan is reported  
 \** sequence is based on the reference, not the reads (nt frequency, in composite mode)  
-\*** minus-one, plus-one, and inflection locs are only called if a window is set, and supersede peak/trough
+\*** minus-one, plus-one, and inflection locs are only called if a window is set, and supersede peak/trough  
 
 ## Requirements
 
@@ -306,7 +306,7 @@ See pythonversion.txt and requiremenets.txt for an up-to-date list of all packag
 If you have any questions or feedback, please contact me at:  
 **Email:** <rpatton@fredhutch.org>
 
-## Acknowledgements
+## Acknowledgments
 Triton is developed and maintained by Robert D. Patton in the Gavin Ha Lab, Fred Hutchinson Cancer Center.  
 Anna-Lisa Doebley provided input and developed the GC-correction process used in Triton, originally found
 in the Griffin (<https://github.com/GavinHaLab/Griffin>) pipeline.
