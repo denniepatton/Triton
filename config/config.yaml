@@ -8,16 +8,19 @@
 ################
 
 cluster_slurm: config/cluster_slurm.yaml # used to get info about available CPUs
-# annotation: config/Ensembl104_LGB_TSS.bed # reference annotation: promoter regions
-annotation: config/377x1000TFs.txt # reference annotation: TF composite regions
+# annotation: config/ATAC-Filtered.txt # ATAC-seq identified sites; use window and composite: True
+# annotation: config/Ensembl109_MANE_TranscriptBodies.bed # canonical gene bodies; use window: None and composite: False
+# annotation: config/Ensembl109_MANE_TSS.bed # canonical transcription start sites; use window and composite: False
+# annotation: config/GTRD_FT-10000_TFBS.tsv # TFBS lists (10,000 sites per); use window and composite: True
+# annotation: config/GTRD_FT-1000_TFBS.tsv # TFBS lists (1,000 sites per); use window and composite: True
 
 ##############
 # parameters #
 ##############
 
-reference_genome: /fh/fast/ha_g/grp/reference/GRCh38/GRCh38.fa # use hg38
+reference_genome: /fh/fast/ha_g/grp/reference/GRCh38/Broad_bundle_hg38/v0/Homo_sapiens_assembly38.fasta # use hg38
 results_dir: results # where your results will go
 map_quality: 20 # minimum mapping quality to keep a read
 size_range: 15 500 # range of fragment lengths to be used for analysis
 window: 2000 # None to use full site range; required for composite
-composite: True # True if passing a list of BEDs; false if a single BED
+composite: True # True if passing a list of BEDs; False if a single BED
