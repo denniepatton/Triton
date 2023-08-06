@@ -16,6 +16,8 @@ def one_hot_encode(seq):
         Returns:
             numpy array: one-hot encoded nucleotide sequence of size 5xN
     """
+    seq = seq.replace('R', 'N')
+    seq = seq.replace('Y', 'N')
     seq2 = [mapping[nt] for nt in seq]
     return np.eye(5)[seq2]
 

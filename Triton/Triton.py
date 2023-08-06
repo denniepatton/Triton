@@ -92,6 +92,9 @@ def generate_profile(region, params):
                     strand = str(bed_tokens[strand_idx])
                 else:  # treat as + if no strand info provided
                     strand = '+'
+                if chrom == 'chrMT':  # in future, change to if not in list of chromosomes
+                    skipped_sites.append(entry.strip() + '\tMT_contig')
+                    continue
                 start_pos = center_pos - int(window/2) - 500
                 stop_pos = center_pos + int(window/2) + 500
                 # process all fragments falling inside the ROI
