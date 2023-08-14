@@ -16,8 +16,9 @@ def one_hot_encode(seq):
         Returns:
             numpy array: one-hot encoded nucleotide sequence of size 5xN
     """
-    seq = seq.replace('R', 'N')
-    seq = seq.replace('Y', 'N')
+    # replace all ambiguity codes with N
+    seq = seq.replace('Y', 'N').replace('R', 'N').replace('W', 'N').replace('S', 'N').replace('K', 'N').\
+        replace('M', 'N').replace('D', 'N').replace('V', 'N').replace('H', 'N').replace('B', 'N').replace('X', 'N')
     seq2 = [mapping[nt] for nt in seq]
     return np.eye(5)[seq2]
 
@@ -30,6 +31,9 @@ def methyl_encode(seq):
         Returns:
             numpy array: one-hot encoded methylation tags of size 8xN
     """
+    # replace all ambiguity codes with N
+    seq = seq.replace('Y', 'N').replace('R', 'N').replace('W', 'N').replace('S', 'N').replace('K', 'N'). \
+        replace('M', 'N').replace('D', 'N').replace('V', 'N').replace('H', 'N').replace('B', 'N').replace('X', 'N')
     seq2 = [me_mapping[me] for me in seq]
     return np.delete(np.eye(9)[seq2], 0, 1).astype(dtype=int)
 

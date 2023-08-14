@@ -126,6 +126,9 @@ def generate_profile(region, params):
                         if gc_bias is not None:  # get GC-bias if available, from the REFERENCE sequence
                             fragment_seq =\
                                 (ref_seq.fetch(chrom, fragment_start + start_pos, fragment_end + start_pos)).upper()
+                            fragment_seq = fragment_seq.replace('Y', 'N').replace('R', 'N').replace('W', 'N').\
+                                replace('S', 'N').replace('K', 'N').replace('M', 'N').replace('D', 'N').\
+                                replace('V', 'N').replace('H', 'N').replace('B', 'N').replace('X', 'N')
                             fragment_seq = list(fragment_seq.replace('T', '0').replace('A', '0').replace('C', '1').
                                                 replace('G', '1').replace('N', str(np.random.randint(0, 2))))
                             fragment_gc_content = sum([int(m) for m in fragment_seq])
@@ -224,6 +227,9 @@ def generate_profile(region, params):
                 if gc_bias is not None:  # get GC-bias if available, from the REFERENCE sequence
                     fragment_seq = \
                         (ref_seq.fetch(chrom, fragment_start + start_pos, fragment_end + start_pos)).upper()
+                    fragment_seq = fragment_seq.replace('Y', 'N').replace('R', 'N').replace('W', 'N'). \
+                        replace('S', 'N').replace('K', 'N').replace('M', 'N').replace('D', 'N'). \
+                        replace('V', 'N').replace('H', 'N').replace('B', 'N').replace('X', 'N')
                     fragment_seq = list(fragment_seq.replace('T', '0').replace('A', '0').replace('C', '1').
                                         replace('G', '1').replace('N', str(np.random.randint(0, 2))))
                     fragment_gc_content = sum([int(m) for m in fragment_seq])
