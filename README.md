@@ -57,7 +57,10 @@ Triton region-level features are output as a .tsv file and include:
     central-loc*: location of central inflection relative to window center (0)  
     central-depth*: phased signal value at the central-loc (with mean in region set to 1)  
     central-diversity*: mean fragment diversity value in the +/-5 bp region about the central-loc (with mean in region set to 1)  
-    
+
+ N.B. that np-amplitude, var-ratio, and fragment diversity measures (fragment-diversity, fragment-ent, and central-diversity) are sensitive to
+ sequencing depth and will be increasingly inversely correlated with sample coverage at low depths.
+
  When run in composite mode Triton will also output a SkippedSites.bed for each samples, containing individual site
  coordinates for sites skipped due to insufficient or outlier coverage (MAD > 10 in any region). This file will share the format
  of whatever input is provided with additional "reject_reason" and "site_ID" columns. These sites may then be run in individual mode
