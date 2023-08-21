@@ -84,6 +84,7 @@ def plot_profiles(name, data, plot_mode, palette=None, show_inflection=False):
                             legend_out=True)
 
     sea.map(sns.lineplot, 'loc', 'value', alpha=0.8, legend='full', n_boot=100)  # n_boot effects speed substantially
+
     sea.add_legend()
     if show_inflection and palette is not None:
         if plot_mode == 'all':
@@ -252,37 +253,39 @@ def main():
     for site in tests_data[0].files:
         if sites_path is None or site in sites:
             if plot_mode == 'TME':
-                dfs = [pd.DataFrame(test_data[site].T, columns=cols_me) for test_data in tests_data if
-                       len(test_data[site].shape) == 2]
+                columns = cols_me
             else:
-                dfs = [pd.DataFrame(test_data[site].T, columns=cols) for test_data in tests_data if
-                       len(test_data[site].shape) == 2]
-            for tdf, sample in zip(dfs, samples):
-                tdf['loc'] = np.arange(len(tdf))
-                if window:
-                    tdf['loc'] = tdf['loc'] - len(tdf) / 2
-                tdf['sample'] = sample
-                if categories is not None:
-                    if sample in categories.keys():
-                        tdf['label'] = categories[sample]
+                columns = cols
+            dfs = []
+            for sample, test_data in zip(samples, tests_data):
+                if len(test_data[site].shape) == 2:
+                    tdf = pd.DataFrame(test_data[site].T, columns=columns)
+                    tdf['loc'] = np.arange(len(tdf))
+                    if window:
+                        tdf['loc'] = tdf['loc'] - len(tdf) / 2
+                    tdf['sample'] = sample
+                    if categories is not None:
+                        if sample in categories.keys():
+                            tdf['label'] = categories[sample]
+                        else:
+                            tdf['label'] = np.nan
                     else:
-                        tdf['label'] = np.nan
-                else:
-                    tdf['label'] = sample
-                if norm == 'raw':
-                    continue
-                elif norm == 'norm':
-                    for col in norm_cols:
-                        tdf[col] = normalize_data(tdf[col])
-                elif norm == 'stand':
-                    for col in norm_cols:
-                        tdf[col] = standardize_data(tdf[col])
-                else:
-                    for col in norm_cols:
-                        tdf[col] = scale_data(tdf[col])
-                if plot_mode == 'TME':
-                    for col in smooth_cols:
-                        tdf[col] = smooth_data(tdf[col])
+                        tdf['label'] = sample
+                    if norm == 'raw':
+                        continue
+                    elif norm == 'norm':
+                        for col in norm_cols:
+                            tdf[col] = normalize_data(tdf[col])
+                    elif norm == 'stand':
+                        for col in norm_cols:
+                            tdf[col] = standardize_data(tdf[col])
+                    else:
+                        for col in norm_cols:
+                            tdf[col] = scale_data(tdf[col])
+                    if plot_mode == 'TME':
+                        for col in smooth_cols:
+                            tdf[col] = smooth_data(tdf[col])
+                    dfs.append(tdf)
             if len(dfs) > 1:
                 df = pd.concat(dfs)
             else:
