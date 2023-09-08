@@ -1,5 +1,5 @@
 # Robert Patton, rpatton@fredhutch.org
-# v0.2.1, 07/05/2023
+# v0.2.2, 09/08/2023
 
 # this is a working version to incorporate methylation statistics from Bismark output BAM files
 # N.B. that methylation metrics, like fragmentomics, are NOT GC-corrected
@@ -8,6 +8,7 @@ import os
 import sys
 import pysam
 import pickle
+import random
 import argparse
 from functools import partial
 from multiprocessing import Pool
@@ -27,7 +28,7 @@ def generate_profile(region, params):
     shape-based) for a single sample. Utilizes functions from triton_helpers.py.
         Parameters:
             region (string): either a file path pointing to a BED-like file (composite) or a BED-like single annotation
-            params (list): bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack
+            params (list): bam_path, frag_range, gc_bias, ref_seq_path, map_q, window, stack
         Returns:
             site: annotation name if stacked, "name" from BED file for each region otherwise
                 ### Fragmentation Features (using all fragments in passed range/bounds) ###
@@ -79,8 +80,7 @@ def generate_profile(region, params):
             *** minus-one, plus-one, and inflection locs are only called if window != None, and supersede peak/trough;
                 if the inflection loc cannot be determined it will default to 0
     """
-    # scale plus-minus ratio to central loc
-    bam_path, out_direct, frag_range, gc_bias, ref_seq_path, map_q, window, stack, fdict = params
+    bam_path, frag_range, gc_bias, ref_seq_path, map_q, window, stack, fdict = params
     bam = pysam.AlignmentFile(bam_path, 'rb')
     ref_seq = pysam.FastaFile(ref_seq_path)
     fragment_lengths = np.zeros(frag_range[1] + 1, dtype=int)  # empty fragment length *histogram*
@@ -104,8 +104,14 @@ def generate_profile(region, params):
                 chrom, center_pos = str(bed_tokens[chr_idx]), int(bed_tokens[pos_idx])
                 if strand_idx is not None:
                     strand = str(bed_tokens[strand_idx])
-                else:  # treat as + if no strand info provided
-                    strand = '+'
+                else:  # choose +/- randomly if strand is not specified
+                    """
+                    N.B. that most TFs bind structurally, e.g. to the major groove of DNA, and/or to palindromic sequences.
+                    There is a similar ambiguity for e.g. histone modification sites. Thus, if strand context is unknown,
+                    it would be implying a directionality which is not necessarily present to assume any particular strand.
+                    So here strand is chosen randomly for each site, to avoid any unintended bias and double counting.
+                    """
+                    strand = random.choice(['+', '-'])
                 start_pos = center_pos - int(window/2) - 500
                 stop_pos = center_pos + int(window/2) + 500
                 # process all fragments falling inside the ROI
@@ -568,7 +574,7 @@ def main():
     elif window is not None:
         print('No "position" column found in BED file(s): defaulting to index 6 (' + header[6] + ')')
 
-    params = [bam_path, results_dir, size_range, gc_bias, ref_seq_path, map_q, window, stack, frag_dict]
+    params = [bam_path, size_range, gc_bias, ref_seq_path, map_q, window, stack, frag_dict]
 
     print('\n### Running Triton on ' + str(len(sites)) + ' region sets ###\n')
     if len(sites) < cpus:  # more cores than we need - use at most 1 per site

@@ -23,7 +23,7 @@ rule triton_main:
 		bam_path = lambda wildcards: config["samples"][wildcards.samples]['bam'],
 		bias_path = lambda wildcards: config["samples"][wildcards.samples]['GC_bias']
 	output:
-		fm_file = temp(config['results_dir']+"/{samples}_TritonFeatures.tsv"),
+		fm_file = (config['results_dir']+"/{samples}_TritonFeatures.tsv"),
 		signal_file = (config['results_dir']+"/{samples}_TritonProfiles.npz")
 	params:
 		sample_name = "{samples}",
