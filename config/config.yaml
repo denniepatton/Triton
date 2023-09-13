@@ -11,8 +11,8 @@ cluster_slurm: config/cluster_slurm.yaml # used to get info about available CPUs
 # annotation: config/ATAC-Filtered.txt # ATAC-seq identified sites; use window and composite: True
 # annotation: config/Ensembl109_MANE_TranscriptBodies.bed # canonical gene bodies; use window: None and composite: False
 # annotation: config/Ensembl109_MANE_TSS.bed # canonical transcription start sites; use window and composite: False
-# annotation: config/GTRD_10000_TFBS.tsv # TFBS lists (10,000 sites per); use window and composite: True
-# annotation: config/GTRD_1000_TFBS.tsv # TFBS lists (1,000 sites per); use window and composite: True
+# annotation: config/GTRD_F10000.tsv # filtered TFBS lists (10,000 sites per); use window and composite: True
+# annotation: config/GTRD_F1000.tsv # filtered TFBS lists (1,000 sites per); use window and composite: True
 
 ##############
 # parameters #
