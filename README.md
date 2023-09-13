@@ -127,7 +127,7 @@ An example canonical (MANE) transcript body annotation is included in config/Ens
 
 An example canonical (MANE) transcription start site annotation is included in config/Ensembl109_MANE_TSSs.bed and is suitable for **windowed, non-composite** analysis.  
 
-Example TFBS-BED file lists are provided (and locally usable by Ha lab) in config/GTRD_FT-1000_TFBS.tsv and config/GTRD_FT-10000_TFBS.tsv; they link to BEDs containing 1,000 and 10,0000 top sites for 668 TFBSs, respectively, garnered from GTRD, filtered, and then taken based on highest peak.counts. They are suitable for **windowed, composite** analysis.  
+Example TFBS-BED file lists are provided (and locally usable by Ha lab) in config/GTRD_F1000.tsv and config/GTRD_F10000.tsv; they link to BEDs containing 1,000 and 10,0000 top sites for 414 TFBSs, respectively, garnered from GTRD, filtered, and then taken based on highest peak.counts. They are suitable for **windowed, composite** analysis.  
 
 **reference_genome:** reference genome .fa file should match whichever build the samples were aligned to  
 
