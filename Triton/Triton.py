@@ -1,5 +1,5 @@
 # Robert Patton, rpatton@fredhutch.org
-# v0.2.2, 09/08/2023
+# v0.2.3, 09/19/2023
 
 import os
 import sys
@@ -98,7 +98,7 @@ def generate_profile(region, params):
                     So here strand is chosen randomly for each site, to avoid any unintended bias and double counting.
                     """
                     strand = random.choice(['+', '-'])
-                if chrom == 'chrMT':  # in future, change to if not in list of chromosomes
+                if chrom == 'chrMT':  # in future, change to "if not in list of chromosomes"
                     skipped_sites.append(entry.strip() + '\tMT_contig')
                     continue
                 start_pos = center_pos - int(window/2) - 500
@@ -172,23 +172,23 @@ def generate_profile(region, params):
                     skipped_sites.append(entry.strip() + '\tzero_coverage')
                     continue
                 raw_median = np.median(site_depth)
-                raw_mad = np.median(np.abs(site_depth - raw_median))
-                if raw_mad == 0:
-                    skipped_sites.append(entry.strip() + '\tzero_MAD')
-                    continue
-                raw_mads_from_median = (site_depth - raw_median) / raw_mad
-                if any(x > 10 for x in raw_mads_from_median):  # consider positive outliers only
-                    skipped_sites.append(entry.strip() + '\tMAD_outlier')
-                    continue
+                raw_mad = np.median(np.abs(site_depth - raw_median))  # this IS median depth if raw_median == 0
+                if raw_median > 0:  # Only perform extended site filtering for sites with minimum coverage so as to not exclude ULP sites
+                    if raw_mad == 0:
+                        skipped_sites.append(entry.strip() + '\tzero_MAD')
+                        continue
+                    raw_mads_from_median = (site_depth - raw_median) / raw_mad
+                    if any(x > 10 for x in raw_mads_from_median):  # consider positive outliers only
+                        skipped_sites.append(entry.strip() + '\tMAD_outlier')
+                        continue
+                if strand == '+':
+                    oh_seq = np.add(oh_seq, one_hot_encode(window_sequence))
                 else:
-                    if strand == '+':
-                        oh_seq = np.add(oh_seq, one_hot_encode(window_sequence))
-                    else:
-                        oh_seq = np.add(oh_seq, one_hot_encode(window_sequence[::-1]))
-                    depth += site_depth
-                    nc_signal += site_nc_signal
-                    fragment_length_profile += site_fragment_length_profile
-                    fragment_lengths += site_fragment_lengths
+                    oh_seq = np.add(oh_seq, one_hot_encode(window_sequence[::-1]))
+                depth += site_depth
+                nc_signal += site_nc_signal
+                fragment_length_profile += site_fragment_length_profile
+                fragment_lengths += site_fragment_lengths
         oh_seq = oh_seq/oh_seq.sum(axis=1, keepdims=True)
     else:  # assemble depth and fragment profiles for sites individually -----------------------------------------------
         bed_tokens = region.strip().split('\t')
