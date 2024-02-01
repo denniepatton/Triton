@@ -117,7 +117,7 @@ available at (<https://github.com/GavinHaLab/Griffin>)
 
 **annotation:** for individual mode this should be a single [bed-like file](https://www.genome.ucsc.edu/FAQ/FAQformat.html#format1) which contains,
 at minimum, the following columns: [chrom chromStart chromEnd name/Gene]. If strand is provided that will be used to orient all sites in the positive
-direction; otherwise regions (including in composite sites) will be treated as belonging to the + strand. If a window is specified, a "position"
+direction; otherwise individual regions will be treated as belonging to the + strand, while composite regions will have a strand randomly selected. If a window is specified, a "position"
 column must also be included, which defines the central point for the window. When run in composite mode, instead of passing a single bed-like
 file, a text file containing a list of bed-like file locations is needed; each individual file is treated as one composite-site, with reads
 "piled up" across all regions based on stacking fragments in each window. Because a defined window is required for composite mode, each bed-like
