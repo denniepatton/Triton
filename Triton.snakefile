@@ -22,8 +22,7 @@ rule all:
 rule triton_main:
     input:
         bam_path = lambda wildcards: config["samples"][wildcards.samples]['bam'],
-        bias_path = lambda wildcards: config["samples"][wildcards.samples]['GC_bias'],
-        tfx = lambda wildcards: [config["samples"][wildcards.samples]['tfx']] if 'tfx' in config["samples"][wildcards.samples] else []
+        bias_path = lambda wildcards: config["samples"][wildcards.samples]['GC_bias']
     output:
         fm_file = (config['results_dir']+"/{samples}_TritonFeatures.tsv"),
         signal_file = (config['results_dir']+"/{samples}_TritonProfiles.npz")
@@ -37,7 +36,7 @@ rule triton_main:
         cpus = config['triton_main']['ncpus'],
         run_mode = config['run_mode'],
         bg_panel = config['bg_panel'],
-        tumor_fraction = lambda wildcards: '--tumor_fraction ' + config["samples"][wildcards.samples]['tfx'] if 'tfx' in config["samples"][wildcards.samples] and config["samples"][wildcards.samples]['tfx'].strip() != '' else ''
+        tumor_fraction = lambda wildcards: '--tumor_fraction ' + str(config["samples"][wildcards.samples]['tfx']) if 'tfx' in config["samples"][wildcards.samples] else ''
     shell:
         """
         python Triton/Triton.py \
