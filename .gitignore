@@ -1,3 +1,8 @@
+# local
+panel_info/GTRD_F1000_BackgroundPanel.npz
+panel_info/MANE.GRCh38.v1.3_TranscriptBodies_BackgroundPanel.npz
+panel_info/MANE.GRCh38.v1.3_TSS_BackgroundPanel.npz
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

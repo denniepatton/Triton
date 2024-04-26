@@ -1,12 +1,13 @@
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
-# v0.2.0, 06/29/2023
+# v0.1.1, 04/04/2024
 
-# utility for extracting (modifiable) additional features from Triton signal output files
+# This is a utility for extracting (modifiable) additional features from Triton signal output files.
+# Use and modify at your own discretion!
 
 """
 N.B. the numpy array ordering of profile objects:
-1: Depth (GC-corrected, if provided)
-2: Probable nucleosome center profile (fragment length re-weighted depth)
+1: Depth (GC-corrected)
+2: Fragment end coverage
 3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
 4: Fragment lengths' short:long ratio (x <= 150 / x > 150)
 5: Fragment lengths' diversity (unique fragment lengths / total fragments)
@@ -23,8 +24,8 @@ import argparse
 import numpy as np
 import pandas as pd
 
-cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-mean', 'frag-stdev', 'frag-median', 'frag-mad', 'frag-ratio',
-        'frag-diversity', 'frag-entropy',  'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']
+cols = ['depth', 'frag-ends', 'phased-signal', 'frag-mean', 'frag-stdev', 'frag-median',
+        'frag-mad', 'frag-ratio', 'frag-diversity', 'frag-entropy',  'peaks']
 
 
 def extract_features(data, site, features):

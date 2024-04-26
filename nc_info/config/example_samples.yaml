@@ -1,0 +1,4 @@
+samples:
+  HD1: /path/to/your/healthy_donor_data/HD1.bam
+  HD2: /path/to/your/healthy_donor_data/HD2.bam
+  HD3: /path/to/your/healthy_donor_data/HD3.bam

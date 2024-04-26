@@ -1,0 +1,19 @@
+# config for nc_dist.snakefile
+# Robert Patton, rpatton@fredhutch.org (Ha Lab)
+# v1.0
+
+
+################
+# config files #
+################
+
+cluster_slurm: config/cluster_slurm.yaml # used to get info about available CPUs
+annotation: config/hsNuc_iNPSPeak_bedops-intersect.bed
+
+##############
+# parameters #
+##############
+
+results_dir: results # where your results will go
+map_quality: 20 # minimum mapping quality to keep a read
+size_range: 15 500 # range of fragment lengths to be used for analysis

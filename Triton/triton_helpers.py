@@ -1,11 +1,33 @@
 # Robert Patton, rpatton@fredhutch.org
-# v0.2.0, 06/29/2023
+# v1.0.0, 03/06/2024
 
 import numpy as np
 import pandas as pd
 
-mapping = dict(zip("NACGT", range(5)))  # sequence mapping for one-hot encoding nucleotides
-me_mapping = dict(zip(".zZxXhHuU", range(9)))  # sequence mapping for one-hot encoding methylation tags from Bismark
+oh_mapping = {chr(i): 0 for i in range(65, 91)}  # all uppercase letters are 0 except for ACGT
+oh_mapping.update(dict(zip("ACGT", range(1, 5))))  # sequence mapping for one-hot encoding nucleotides
+
+
+def str2int(v):
+    """
+    Stand-in type to read string/int values from the command line
+        Parameters:
+            v (string): input int/string
+        Returns:
+            int or None
+    """
+    return int(v) if v.isdigit() else None
+
+
+def get_index(header, names, default, message):
+    for name in names:
+        if name in header:
+            return header.index(name)
+    if default is not None:
+        print(message.format(default, header[default]))
+    else:
+        print(message.format(default, 'N/A'))
+    return default
 
 
 def one_hot_encode(seq):
@@ -16,55 +38,27 @@ def one_hot_encode(seq):
         Returns:
             numpy array: one-hot encoded nucleotide sequence of size 5xN
     """
-    # replace all ambiguity codes with N
-    seq = seq.replace('Y', 'N').replace('R', 'N').replace('W', 'N').replace('S', 'N').replace('K', 'N').\
-        replace('M', 'N').replace('D', 'N').replace('V', 'N').replace('H', 'N').replace('B', 'N').replace('X', 'N')
-    seq2 = [mapping[nt] for nt in seq]
-    return np.eye(5)[seq2]
-
-
-def methyl_encode(seq):
-    """
-    One-hot encode a methylation tag sequence from bismark (as a binary numpy array)
-        Parameters:
-            seq (string): string of methylation calls to one-hot encode
-        Returns:
-            numpy array: one-hot encoded methylation tags of size 8xN
-    """
-    # replace all ambiguity codes with N
-    seq = seq.replace('Y', 'N').replace('R', 'N').replace('W', 'N').replace('S', 'N').replace('K', 'N'). \
-        replace('M', 'N').replace('D', 'N').replace('V', 'N').replace('H', 'N').replace('B', 'N').replace('X', 'N')
-    seq2 = [me_mapping[me] for me in seq]
-    return np.delete(np.eye(9)[seq2], 0, 1).astype(dtype=int)
+    oh_seq = [oh_mapping[nt] for nt in seq]
+    return np.eye(5, dtype=int)[oh_seq]
 
 
 def get_gc_bias_dict(bias_path):
     """
-    (Modified from Griffin pipeline, credit: Anna-Lisa Doebley)
-    One-hot encode a nucleotide sequence (as a binary numpy array)
+    Modified from Griffin pipeline, credit: Anna-Lisa Doebley
+    https://github.com/adoebley/Griffin
+    https://doi.org/10.1038/s41467-022-35076-w
+    Reads in a GC bias file and returns a dictionary of GC bias values
         Parameters:
-            bias_path (string): path to GC bias output by Griffin
+            bias_path (string): path to GC bias output by Griffin or in Griffin format
         Returns:
             dict: GC bias in dictionary form (returns bias given [length][gc content]
     """
-    if bias_path is not None:
-        bias = pd.read_csv(bias_path, sep='\t')
-        bias['smoothed_GC_bias'] = np.where(bias['smoothed_GC_bias'] < 0.05, np.nan, bias['smoothed_GC_bias'])
-        bias = bias[['length', 'num_GC', 'smoothed_GC_bias']]
-        bias = bias.set_index(['num_GC', 'length']).unstack()
-        bias = bias.to_dict()
-        bias2 = {}
-        for key in bias.keys():
-            length = key[1]
-            bias2[length] = {}
-            for num_GC in range(0, length + 1):
-                temp_bias = bias[key][num_GC]
-                bias2[length][num_GC] = temp_bias
-        bias = bias2
-        del bias2
-        return bias
-    else:
-        return None
+    bias = pd.read_csv(bias_path, sep='\t')
+    bias['smoothed_GC_bias'] = bias['smoothed_GC_bias'].where(bias['smoothed_GC_bias'] >= 0.05, np.nan)
+    bias = bias[['length', 'num_GC', 'smoothed_GC_bias']]
+    bias = bias.set_index(['num_GC', 'length']).unstack().to_dict()
+    bias_dict = {key[1]: {num_GC: bias[key][num_GC] for num_GC in range(0, key[1] + 1)} for key in bias.keys()}
+    return bias_dict
 
 
 def frag_metrics(frag_lengths, bins, reduce=False):
@@ -73,8 +67,8 @@ def frag_metrics(frag_lengths, bins, reduce=False):
     to long (151 <= f)*, diversity, and Shannon entropy of fragment lengths given an input of fragment length counts.
     * Used to be short (f <= 120) to long (140 <= f <= 250)
         Parameters:
-            frag_lengths (list/array): 1D array of fragment length counts, where the index is the fragment length
-            bins (list): list of bin boundaries
+            frag_lengths (np.array): 1D array of fragment length counts, where the index is the fragment length
+            bins (np.array): list of bin boundaries
             reduce (bool): if true, only output ratio, diversity, and entropy (save time on signal profiles)
         Returns:
             mean, stdev, MAD, ratio (float, float, int, float)
@@ -82,58 +76,24 @@ def frag_metrics(frag_lengths, bins, reduce=False):
     """
     total_count = np.sum(frag_lengths)
     unique_count = np.count_nonzero(frag_lengths)
+    frag_lengths_long = np.sum(frag_lengths[151:])
+    
+    if total_count < 2 or unique_count < 2 or frag_lengths_long == 0:  # BARE MINIMUM to get real metrics
+        return (0.0,) * (3 if reduce else 7)
+
+    ratio = np.sum(frag_lengths[:151]) / frag_lengths_long
+    diversity = unique_count / total_count
+    entropy = shannon_entropy(frag_lengths, bins)
+
     if reduce:
-        if unique_count < 2 or np.sum(frag_lengths[151:]) == 0:  # BARE MINIMUM to get real metrics
-            return np.nan, np.nan, np.nan
-        ratio = np.sum(frag_lengths[:151]) / np.sum(frag_lengths[151:])
-        diversity = unique_count / total_count
-        entropy = shannon_entropy(frag_lengths, bins)
         return ratio, diversity, entropy
-    else:
-        if unique_count < 2 or np.sum(frag_lengths[151:]) == 0:  # BARE MINIMUM to get real metrics
-            return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-        mean = sum([idx * val for idx, val in enumerate(frag_lengths)]) / total_count
-        stdev = np.sqrt(sum([val * (idx - mean)**2 for idx, val in enumerate(frag_lengths)]) / total_count)
-        median = 0  # set to 0 the iterate until the median is reached
-        while np.sum(frag_lengths[0:(median + 1)]) < (total_count / 2):
-            median += 1
-        ads = np.zeros(len(frag_lengths))  # ordered absolute deviation counts
-        for idx, val in enumerate(frag_lengths):
-            ads[np.abs(idx - median)] += val
-        mad = 0
-        while np.sum(ads[0:(mad + 1)]) < (total_count / 2):
-            mad += 1
-        ratio = np.sum(frag_lengths[:151]) / np.sum(frag_lengths[151:])
-        diversity = unique_count / total_count
-        entropy = shannon_entropy(frag_lengths, bins)
-        return mean, stdev, median, mad, ratio, diversity, entropy
 
+    mean = np.average(np.arange(len(frag_lengths)), weights=frag_lengths)
+    stdev = np.sqrt(np.average((np.arange(len(frag_lengths)) - mean)**2, weights=frag_lengths))
+    median = np.searchsorted(np.cumsum(frag_lengths), total_count / 2)
+    mad = np.searchsorted(np.cumsum(np.bincount(np.abs(np.arange(len(frag_lengths)) - median), minlength=len(frag_lengths))), total_count / 2)
 
-def me_metrics(oh_vals):
-    """
-    Returns the methylation proportion in 4 contexts, or NaN if no base methylation possible.
-        Parameters:
-            oh_vals (numpy array): 1D array of me tag counts [z, Z, x, X, h, H, u, U]
-        Returns:
-            CpG, CHG, CHH, CHN (float, float, float, float)
-    """
-    if oh_vals[0] == 0:
-        cpg = np.nan
-    else:
-        cpg = oh_vals[1] / (oh_vals[0] + oh_vals[1])
-    if oh_vals[2] == 0:
-        chg = np.nan
-    else:
-        chg = oh_vals[3] / (oh_vals[2] + oh_vals[3])
-    if oh_vals[4] == 0:
-        chh = np.nan
-    else:
-        chh = oh_vals[5] / (oh_vals[4] + oh_vals[5])
-    if oh_vals[6] == 0:
-        chn = np.nan
-    else:
-        chn = oh_vals[7] / (oh_vals[6] + oh_vals[7])
-    return cpg, chg, chh, chn
+    return mean, stdev, median, mad, ratio, diversity, entropy
 
 
 def shannon_entropy(counts, bins):
@@ -141,45 +101,48 @@ def shannon_entropy(counts, bins):
     Returns the Shannon Entropy of a set of values; will bin with "bins" bins
         Parameters:
             counts (list/array): 1D array of fragment length counts, where the index is the fragment length
-            bins (list): list of bin boundaries
+            bins (np.array): list of bin boundaries
         Returns:
             float: Shannon Entropy
     """
-    histogram = [np.sum(counts[val:(val + 5)]) for val in bins]
-    total_counts = sum(histogram)
+    # Calculate histogram using numpy's advanced indexing and binning
+    histogram = np.add.reduceat(counts, bins[:-1])
+    total_counts = histogram.sum()
+
     if total_counts < 2:
         return 0
-    pdist = histogram / sum(histogram)
-    pdist = [p for p in pdist if p != 0.0]
-    # moments = [p * np.log(p) for p in pdf]  # un-normalized
-    moments = [p * np.log(p) / np.log(total_counts) for p in pdist]  # locally normalized
-    return - sum(moments)
+
+    pdist = histogram / total_counts
+    nonzero_pdist = pdist[pdist != 0.0]
+    moments = nonzero_pdist * np.log(nonzero_pdist) / np.log(total_counts)
+
+    return -moments.sum()
 
 
 def local_peaks(ys, xs):
     """
-    Finds LOCAL (min or max relative to neighbors) peaks given a 1D list/array; only appropriate for very smooth data
+    Finds LOCAL (min or max relative to neighbors) peaks given a 1D array; only appropriate for very smooth data
     (E.G. an inverse fourier transform with high frequencies removed)
         Parameters:
-            ys (list/array): signal height
-            xs (list/array): raw height (for insuring non-zero maxima)
+            ys (np.array): signal height
+            xs (np.array): raw height (for insuring non-zero maxima)
         Returns:
-            max_values: list of maxima values
-            max_indices: list of corresponding maxima indices
-            min_values: list of minima values
-            min_indices: list of corresponding minima indices
+            max_values: np.array of maxima values
+            max_indices: np.array of corresponding maxima indices
+            min_values: np.array of minima values
+            min_indices: np.array of corresponding minima indices
     """
-    max_values, max_indices = [], []
-    min_values, min_indices = [], []
-    ysl = len(ys) - 1
-    for i, y in enumerate(ys):
-        if 0 < i < ysl and ys[i - 1] < y and y > ys[i + 1] and xs[i] > 0:  # local maxima
-            max_values.append(y)
-            max_indices.append(i)
-        if 0 < i < ysl and ys[i - 1] > y and y < ys[i + 1]:  # local minima
-            min_values.append(y)
-            min_indices.append(i)
-    return max_values, max_indices, min_values, min_indices
+    # Calculate differences between consecutive elements
+    diff = np.diff(ys)
+    # Find indices where the difference changes sign
+    sign_changes = np.where(np.diff(np.sign(diff)))[0] + 1
+    # Separate into maxima and minima
+    max_indices = sign_changes[np.where(diff[sign_changes - 1] > 0)]
+    min_indices = sign_changes[np.where(diff[sign_changes - 1] < 0)]
+    # Filter maxima to ensure non-zero maxima
+    max_indices = max_indices[xs[max_indices] > 0]
+
+    return ys[max_indices], max_indices, ys[min_indices], min_indices
 
 
 def nearest_peaks(ref_point, ref_list):
@@ -187,93 +150,79 @@ def nearest_peaks(ref_point, ref_list):
     Finds the nearest upstream/downstream peak to a given index/point
         Parameters:
             ref_point (int): point of interest
-            ref_list (list/array): list of peak indices
+            ref_list (np.array): list of peak indices
         Returns:
             left_index: index of nearest upstream peak
             right_index: index of nearest downstream peak
     """
-    distances = [ref_point - peak for peak in ref_list]
-    if len([i for i in distances if i > 0]) > 0:
-        left_index = ref_point - min([i for i in distances if i > 0])
-    else:
-        left_index = np.nan
-    if len([abs(i) for i in distances if i < 0]) > 0:
-        right_index = ref_point + min([abs(i) for i in distances if i < 0])
-    else:
-        right_index = np.nan
+    distances = ref_point - ref_list
+    positive_distances = distances[distances > 0]
+    left_index = ref_point - positive_distances.min() if positive_distances.size else np.nan
+    negative_distances = np.abs(distances[distances < 0])
+    right_index = ref_point + negative_distances.min() if negative_distances.size else np.nan
+
     return left_index, right_index
 
+def subtract_background(frag_lengths, frag_lengths_prof, frag_ends_profile, depth, site_dict, tfx):
+    """
+    Subtracts background from a site's fragment length profile
+        Parameters:
+            frag_lengths (np.array): 1D array of fragment length counts, where the index is the fragment length
+            frag_length_prof (scipy.sparse.csr_matrix): a sparse matrix of shape (501, window) where each column represents fragment_lengths at that position
+            frag_end_profile (np.array): 1D array of fragment end counts
+            depth (np.array): 1D array of read counts
+            site_dict (dict): dictionary of site-specific background values
+            tfx (float): TFX value for site (sample)
+        Returns:
+            frag_lengths: np.array of fragment length counts
+            frag_length_prof: np.array of fragment length profile
+            frag_end_profile: np.array of fragment end counts
+            depth: np.array of read counts
+    """
+    bg_purity = (1 - tfx)
+    # Get background values for site
+    frag_lengths_bg = site_dict['fragment_lengths']
+    frag_lengths_prof_bg = site_dict['fragment_length_profile'].toarray()
+    frag_ends_profile_bg = site_dict['fragment_end_profile']
+    depth_bg = site_dict['depth']
 
-# def frag_ratio(frag_lengths):
-#     """
-#     Returns the ratio of short (f <= 150) to long (151 <= f) fragment lengths in a list/array
-#     * Used to be short (f <= 120) to long (140 <= f <= 250)
-#         Parameters:
-#             frag_lengths (list/array): series of fragment lengths
-#         Returns:
-#             float: the short/long ratio
-#     """
-#     short_frags = len([x for x in frag_lengths if x <= 120])
-#     long_frags = len([x for x in frag_lengths if 140 <= x <= 250])
-#     if short_frags > 0 and long_frags > 0:
-#         ratio = short_frags / long_frags
-#         return ratio
-#     else:
-#         return np.nan
-#
-#
-# def dirichlet_normalized_entropy(counts, ref_counts):
-#     """
-#     Given two sets of fragment lengths in a region, return the Shannon entropy normalized by the expected Shannon
-#     Entropy for a given set of fragment lengths (ref_lengths).
-#     N.B., if lengths==ref_lengths, normalization still occurs, using a hypothetical, Dirichlet-derived distribution
-#         Parameters:
-#             counts (list/array): 1D array of fragment length counts, where the index is the fragment length
-#             ref_counts (list/array): same as above, but to use as a standard reference
-#         Returns:
-#             float: normalized entropy
-#     """
-#     bin_range = list(range(15, 500, 5))  # hardcoded for dict-based analyses of range 15-500
-#     total_frags = np.sum(counts)
-#     ref_hist = [np.sum(ref_counts[val:(val + 5)]) for val in bin_range]
-#     ref_hist = [h for h in ref_hist if h != 0.0]
-#     dist_pdfs = np.random.dirichlet(ref_hist, 1000)
-#     norm_factor = mean_entropy(dist_pdfs, total_frags, bin_range)
-#     if norm_factor > 0:
-#         return shannon_entropy(counts, bin_range) / norm_factor
-#     else:
-#         return np.nan
-#
-#
-# def mean_entropy(pdf_matrix, counts, bins):
-#     """
-#     Finds the mean (expected) entropy given probability distributions, for a number of counts and set of bins
-#         Parameters:
-#             pdf_matrix (ndarray): drawn PDF samples of shape (size, #)
-#             counts (int): number of multinomial draws to perform
-#             bins (list): list of bin boundaries
-#         Returns:
-#             float: expected Shannon Entropy
-#     """
-#     entropies = []
-#     for row in pdf_matrix:
-#         draws = np.random.multinomial(counts, row)
-#         entropies.append(shannon_entropy(draws, bins, binned=True))
-#     return np.mean(entropies)
-#
-#
-# def point_entropy(ordered_counts, bins, background_entropy):
-#     """
-#     Finds the Shannon Entropy (1bp bins) at every point, scaled by some expected background
-#         Parameters:
-#             ordered_counts (2D array): 2D array where columns represent loci, and the rows represent fragment length
-#                 counts of length row_index
-#             bins (list): list of bin boundaries
-#             background_entropy (float): normalization constant
-#         Returns:
-#             1D array: Shannon Entropies at each point (corresponds to ordering in ordered_counts)
-#     """
-#     point_shannon_entropies = np.apply_along_axis(shannon_entropy, axis=0, arr=ordered_counts, bins=bins)
-#     return point_shannon_entropies / background_entropy
+    # Subtract background from fragment length counts
+    frag_lengths_counts = np.sum(frag_lengths)
+    frag_lengths_norm = frag_lengths / frag_lengths_counts
+    frag_lengths_bg_norm = frag_lengths_bg / np.sum(frag_lengths_bg)
+    frag_lengths_sub = frag_lengths_norm - bg_purity * frag_lengths_bg_norm
+    frag_lengths_sub[frag_lengths_sub < 0] = 0
+    frag_lengths_sub = np.round(frag_lengths_sub * frag_lengths_counts)
 
+    if frag_lengths_prof_bg is not None:
+        # Subtract background from fragment length profile
+        frag_lengths_prof_counts = np.sum(frag_lengths_prof, axis=0)
+        frag_lengths_prof_norm = frag_lengths_prof / frag_lengths_prof_counts
+        frag_lengths_prof_bg_norm = frag_lengths_prof_bg / np.sum(frag_lengths_prof_bg, axis=0)
+        frag_lengths_prof_sub = frag_lengths_prof_norm - bg_purity * frag_lengths_prof_bg_norm
+        frag_lengths_prof_sub[frag_lengths_prof_sub < 0] = 0
+        frag_lengths_prof_sub = np.round(frag_lengths_prof_sub * frag_lengths_prof_counts)
+    else:
+        # Skip, as this was run in region mode and
+        frag_lengths_prof_sub = frag_lengths_prof
 
+    if frag_ends_profile_bg is not None:
+        # Subtract background from fragment end profile
+        frag_ends_profile_counts = np.sum(frag_ends_profile)
+        frag_ends_profile_norm = frag_ends_profile / frag_ends_profile_counts
+        frag_ends_profile_bg_norm = frag_ends_profile_bg / np.sum(frag_ends_profile_bg)
+        frag_ends_profile_sub = frag_ends_profile_norm - bg_purity * frag_ends_profile_bg_norm
+        frag_ends_profile_sub[frag_ends_profile_sub < 0] = 0
+        frag_ends_profile_sub = frag_ends_profile_sub * frag_ends_profile_counts
+    else:
+        frag_ends_profile_sub = frag_ends_profile
+
+    # Subtract background from depth
+    mean_depth = np.mean(depth[500:-500])
+    depth_norm = depth / mean_depth
+    depth_bg_norm = depth_bg / np.mean(depth_bg[500:-500])
+    depth_sub = depth_norm - bg_purity * depth_bg_norm
+    depth_sub[depth_sub < 0] = 0
+    depth_sub = depth_sub * mean_depth
+
+    return frag_lengths_sub, frag_lengths_prof_sub, frag_ends_profile_sub, depth_sub

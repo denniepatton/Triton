@@ -6,15 +6,15 @@
 __default__:
     partition: campus-new
     time: "24:0:0"
-    mem: 4G
-    ncpus: 1
+    mem: 16G
+    ncpus: 4
     ntasks: 1
     output: logs/cluster/{rule}.%A.out
     JobName: "{rule}"
 
 triton_main:
     partition: campus-new
-    mem: 32G # defaults to 4Gb x ncpus
-    ncpus: 8 # number of cores to process each sample
+    mem: 64G # defaults to 4Gb x ncpus
+    ncpus: 16 # number of cores to process each sample
     output: logs/cluster/{rule}.{wildcards.samples}.%A.out
     JobName: "{rule}.{wildcards.samples}"

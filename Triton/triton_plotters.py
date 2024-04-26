@@ -1,5 +1,5 @@
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
-# v0.2.1, 06/30/2023
+# v0.3.1, 04/04/2024
 
 # Utility for plotting Triton profile outputs
 # N.B. Peak locations and nucleotide-frequency plotting is not supported
@@ -7,115 +7,46 @@
 
 """
 N.B. the numpy array ordering of profile objects:
-1: Depth (GC-corrected, if provided)
-2: Probable nucleosome center profile (fragment length re-weighted depth)
-3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
+1: Depth (GC-corrected)
+2: Fragment end coverage
+3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile, GC-corrected)
 4: Fragment lengths' short:long ratio (x <= 150 / x > 150)
 5: Fragment lengths' diversity (unique fragment lengths / total fragments)
-6: Fragment lengths' Shannon Entropy (normalized by window Shannon Entropy)
+6: Fragment lengths' Shannon Entropy
 7: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
 8: A (Adenine) frequency**
 9: C (Cytosine) frequency**
 10: G (Guanine) frequency**
 11: T (Tyrosine) frequency**
-
-eliff TritonMe (methylation mode, using Bismark-aligned outputs:
-1: Depth (GC-corrected, if provided)
-2: Probable nucleosome center profile (fragment length re-weighted depth)
-3: Phased-nucleosome profile (Fourier filtered probable nucleosome center profile)
-4: Fragment lengths' short:long ratio (x <= 150 / x > 150)
-5: Fragment lengths' diversity (unique fragment lengths / total fragments)
-6: Fragment lengths' Shannon Entropy (normalized by window Shannon Entropy)
-7: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***
-8: CpG methylation frequency (NaN if no overlapping targets)
-9: CHG methylation frequency (NaN if no overlapping targets)
-10: CHH methylation frequency (NaN if no overlapping targets)
-11: CN/CHN methylation frequency (NaN if no overlapping targets)
-12: A (Adenine) frequency**
-13: C (Cytosine) frequency**
-14: G (Guanine) frequency**
-15: T (Tyrosine) frequency**
 """
-
 
 import os
 import argparse
+import warnings
 import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
-cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy',
+# Suppress the seaborn UserWarning about tight layout
+warnings.filterwarnings('ignore', 'The figure layout has changed to tight', UserWarning)
+
+# pretty column names
+cols = ['depth', 'frag-ends', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy',
         'peaks', 'a-freq', 'c-freq', 'g-freq', 't-freq']
-cols_me = ['depth', 'nuc-centers', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy', 'peaks',
-           'CpG-Me-freq', 'CHG-ME-freq', 'CHH-Me-freq', 'CHN-Me-freq', 'a-freq', 'c-freq', 'g-freq', 't-freq']
+pretty_cols = ['Depth (GC-Corrected)', 'Fragment End Coverage', 'Phased Nucleosomal Signal', 'Fragment Short:Long Ratio',
+                'Fragment Diversity Index', 'Fragment Shannon Entropy', 'Peaks', 'A Frequency', 'C Frequency', 'G Frequency', 'T Frequency']
+col_map = {col: pretty_cols[i] for i, col in enumerate(cols)}
+profile_labels = {'depth': 'depth',
+                  'frag-ends': 'depth',
+                  'phased-signal': 'depth',
+                  'frag-ratio': 'ratio',
+                  'frag-diversity': 'diversity',
+                  'frag-entropy': 'entropy',}
+
 # signals to normalize
-norm_cols = ['depth', 'nuc-centers', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy']
-smooth_cols = ['CpG-Me-freq', 'CHG-ME-freq', 'CHH-Me-freq', 'CHN-Me-freq']
-
-
-def plot_profiles(name, data, plot_mode, palette=None, show_inflection=False):
-    """
-    Plots all profiles specified with plot_mode in one figure.
-        Parameters:
-            name (string): name of site being plotted
-            data (pandas long df): signal profile(s) from Triton
-            plot_mode (string): name of plotting mode (signal, all, DHS)
-            palette (target:color dictionary): palette for subtypes if categories is passed
-            show_inflection (bool): whether to plot vertical lines showing the inflection and +/-1 nucleosome positions
-    """
-    xmin, xmax = data['loc'].min(), data['loc'].max() + 1
-    df_peaks = data[data['profile'] == 'peaks']
-    if plot_mode == 'all':
-        data = data[~data['profile'].isin(['a-freq', 'c-freq', 'g-freq', 't-freq', 'peaks'])]
-    elif plot_mode == 'signal':
-        data = data[data['profile'] == 'phased-signal']
-    elif plot_mode == 'TME':
-        data = data[data['profile'].isin(['depth', 'phased-signal', 'frag-diversity',
-                                          'CpG-Me-freq', 'CHG-ME-freq', 'CHH-Me-freq', 'CHN-Me-freq'])]
-    else:
-        data = data[data['profile'].isin(['depth', 'phased-signal', 'frag-diversity'])]
-
-    if palette is not None:
-        sea = sns.FacetGrid(data, row='profile', hue='label', despine=False, height=3, aspect=3, palette=palette,
-                            sharey=False, legend_out=True)
-    else:
-        sea = sns.FacetGrid(data, row='profile', hue='label', despine=False, height=3, aspect=3, sharey=False,
-                            legend_out=True)
-
-    sea.map(sns.lineplot, 'loc', 'value', alpha=0.8, legend='full', n_boot=100)  # n_boot effects speed substantially
-
-    sea.add_legend()
-    if show_inflection and palette is not None:
-        if plot_mode == 'all':
-            ax = sea.axes.flatten()[2]
-        elif plot_mode == 'signal':
-            ax = sea.axes.flatten()[0]
-        else:
-            ax = sea.axes.flatten()[1]
-        for subtype in data['label'].unique():
-            sub_df = df_peaks[df_peaks['label'] == subtype]
-            minus_locs = sub_df.loc[sub_df['value'] == -2, 'loc'].values
-            plus_locs = sub_df.loc[sub_df['value'] == 2, 'loc'].values
-            inflect_locs = sub_df.loc[sub_df['value'] == 3, 'loc'].values
-            if minus_locs.any() and plus_locs.any() and inflect_locs.any():
-                m_mean, m_std = np.mean(minus_locs), np.std(minus_locs)
-                p_mean, p_std = np.mean(plus_locs), np.std(plus_locs)
-                i_mean, i_std = np.mean(inflect_locs), np.std(inflect_locs)
-                ax.axvspan(m_mean - m_std, m_mean + m_std, alpha=0.05, color=palette[subtype])
-                ax.axvline(x=m_mean, alpha=0.3, color=palette[subtype], ls='-')
-                ax.axvspan(p_mean - p_std, p_mean + p_std, alpha=0.05, color=palette[subtype])
-                ax.axvline(x=p_mean, alpha=0.3, color=palette[subtype], ls='-')
-                ax.axvspan(i_mean - i_std, i_mean + i_std, alpha=0.05, color=palette[subtype])
-                ax.axvline(x=i_mean, alpha=0.3, color=palette[subtype])
-    if plot_mode == 'TME':
-        for ax_index in range(3, 7):
-            ax = sea.axes.flatten()[ax_index]
-            ax.set_ylim(0, 1)
-    sea.set(xlim=(xmin, xmax))
-    plt.savefig(name + '-Profiles_' + plot_mode + '.pdf', bbox_inches="tight")
-    plt.close()
-    return
+norm_cols = ['depth', 'frag-ends', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy']
 
 
 def normalize_data(data):
@@ -163,7 +94,7 @@ def scale_data(data):
         return data
     else:
         return data / mean_val
-
+    
 
 def smooth_data(data, window=15):
     """
@@ -185,15 +116,74 @@ def smooth_data(data, window=15):
     return smoothed_data
 
 
-# below is for a non-issue iterating through "files"
-# noinspection PyUnresolvedReferences
+def plot_profiles(name, data, plot_mode, norm_method, region, palette=None):
+    """
+    Plots all profiles specified with plot_mode in one figure.
+        Parameters:
+            name (string): name of site being plotted
+            data (pandas long df): signal profile(s) from Triton
+            plot_mode (string): name of plotting mode (signal, all, RSD, TME - see main() for details)
+            norm_method (string): signal normalization method (for labels)
+            region (bool): whether to plot region-based profiles (0 at left side) or not (0 in middle)
+            show_inflections (bool): whether to plot vertical lines showing the inflection and +/-1 nucleosome positions
+            palette (target:color dictionary): palette for subtypes if categories is passed
+    """
+    sns.set_context("notebook", font_scale=1.3)
+
+    xmin, xmax = data['loc'].min(), data['loc'].max() + 1
+
+    plot_mode_profiles = {'all': ['depth', 'frag-ends', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy'],
+                          'signal': ['phased-signal'],
+                          'default': ['depth', 'phased-signal', 'frag-diversity']}
+
+    profiles = plot_mode_profiles.get(plot_mode, plot_mode_profiles['default'])
+    data = data.copy()
+    data = data.loc[data['profile'].isin(profiles)]
+    data.loc[:, 'profile'] = data['profile'].map(col_map)
+    if region:
+        loc_name = 'location relative to start (bp)'
+    else:
+        loc_name = 'location relative to center (bp)'
+    data = data.rename(columns={'profile': 'Profile', 'label': 'Sample / Group', 'loc': loc_name})
+
+    sea = sns.FacetGrid(data, row='Profile', hue='Sample / Group', despine=False, height=3, aspect=3, palette=palette, sharey=False, sharex=True, legend_out=True)
+    sea.map(sns.lineplot, loc_name, 'value', alpha=0.8, legend='full', n_boot=100)
+
+    # Add smoothed 'frag-ends' profile if plotted
+    if 'frag-ends' in profiles:
+        frag_ends_data = data[data['Profile'] == 'Fragment End Coverage'].copy()  # Create a copy to avoid SettingWithCopyWarning
+        frag_ends_data.loc[:, 'value'] = smooth_data(frag_ends_data['value'])  # Smooth data
+        frag_ends_subplot = sea.axes[profiles.index('frag-ends'), 0]  # Get 'frag-ends' subplot
+        sns.lineplot(x=loc_name, y='value', data=frag_ends_data, color='red', ax=frag_ends_subplot, legend=False)
+
+    x_ticks = np.linspace(xmin, xmax, num=5)
+    for ax in sea.axes.flat:
+        ax.set_xticks(x_ticks)
+        ax.set_xticklabels(x_ticks.astype(int))
+
+    prefix = {'raw': 'raw ', 'norm': 'normalized ', 'stand': '', 'default': 'scaled '}
+    y_labels = {key: prefix.get(norm_method, prefix['default']) + value for key, value in profile_labels.items()}
+    if norm_method == 'stand':
+        y_labels = {key: value + ' Z-score' for key, value in y_labels.items()}
+
+    for ax, profile in zip(sea.axes.flat, profiles):
+        ax.set_ylabel(y_labels[profile], labelpad=10)
+        ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
+
+    sea.set_titles("{row_name}", pad=10)
+    sea.set(xlim=(xmin, xmax))
+    sea.add_legend()
+    plt.savefig(name + '-Profiles_' + plot_mode + '.pdf')
+    plt.close()
+    return
+
+
 def main():
     parser = argparse.ArgumentParser(description='\n### triton_plotters.py ### plots Triton output profiles')
     parser.add_argument('-i', '--input', help='one or more TritonProfiles.npz files; wildcards (e.g. '
                                               'results/*.npz) are OK.', nargs='*', required=True)
     parser.add_argument('-m', '--mode', help='plotting mode (all: all profiles, signal: only phased signal profile, '
-                                             'RSD: raw depth, signal, and fragment diversity profiles, TME: ONLY iff '
-                                             'TritonMe was used, plots RSD + Me frequencies). DEFAULT = RSD.',
+                                             'RSD: raw depth, signal, and fragment diversity profiles. DEFAULT = RSD.',
                         required=False, default='RSD')
     parser.add_argument('-c', '--categories', help='tsv file containing matched sample names (column 1) and '
                                                    'categories (column 2) to color samples by composite '
@@ -209,14 +199,14 @@ def main():
                                                 'for samples/categories. Sample/category names must exactly match '
                                                 'sample names passed to Triton, or category names passed with the '
                                                 '-c/--categories option. Will error if inputs/categories include '
-                                                'labels not present in palette.This file should NOT contain a header. '
+                                                'labels not present in palette. This file should NOT contain a header. '
                                                 'DEFAULT = None (use Seaborn default colors).',
                         required=False, default=None)
     parser.add_argument('-s', '--sites', help='file containing a list (row-wise) of sites to plot. This file should '
                                               'NOT contain a header. DEFAULT = None (plotting all available sites).',
                         required=False, default=None)
-    parser.add_argument('-w', '--window', help='if set, data is "windowed" - sets 0-point to the middle instead of the　'
-                                               '5\' end. DEFAULT = False.', action='store_true')
+    parser.add_argument('-r', '--region_axis', help='if set, data is "region" - sets 0-point to the left side instead of the middle. '
+                                               'DEFAULT = False.', action='store_true')
     parser.add_argument('-n', '--normalization', help='signal-normalization method to use at the site + sample level: '
                                                       '"raw" (raw values), "norm" (true normalization from 0-1), '
                                                       '"stand" (standardize, i.e. z-score), "scale" (scale mean to 1). '
@@ -229,84 +219,60 @@ def main():
     categories = args.categories
     palette_file = args.palette
     sites_path = args.sites
-    window = args.window
+    region = args.region_axis
     norm = args.normalization
 
-    print('### Running triton_plotters.py in "' + plot_mode + '" mode using "' + norm + '" signal scaling.')
+    print(f'### Running triton_plotters.py in "{plot_mode}" mode using "{norm}" signal scaling.')
 
-    if categories is not None:
-        categories = pd.read_table(categories, sep='\t', header=None)
-        categories = dict(zip(categories[0], categories[1]))
-
-    if sites_path is not None:
-        with open(sites_path) as f:
-            sites = f.read().splitlines()
-
-    if palette_file is not None:
-        palette_file = pd.read_table(palette_file, sep='\t', header=None)
-        palette = dict(palette_file.itertuples(False, None))
-    else:
-        palette = None
+    categories = pd.read_table(categories, sep='\t', header=None).set_index(0).to_dict()[1] if categories else None
+    sites = open(sites_path).read().splitlines() if sites_path else None
+    palette = pd.read_table(palette_file, sep='\t', header=None).set_index(0).to_dict()[1] if palette_file else None
 
     samples = [os.path.basename(path).split('_TritonProfiles.npz')[0] for path in input_path]
     tests_data = [np.load(path) for path in input_path]
+
     for site in tests_data[0].files:
+
         if sites_path is None or site in sites:
-            if plot_mode == 'TME':
-                columns = cols_me
-            else:
-                columns = cols
+            skip_site = False
+            columns = cols
             dfs = []
             for sample, test_data in zip(samples, tests_data):
+                print(f'Processing {site} for {sample}')
+                if pd.isnull(test_data[site]).all():
+                    skip_site = True
+                    continue
                 if len(test_data[site].shape) == 2:
                     tdf = pd.DataFrame(test_data[site].T, columns=columns)
                     tdf['loc'] = np.arange(len(tdf))
-                    if window:
-                        tdf['loc'] = tdf['loc'] - len(tdf) / 2
+                    if not region:
+                        tdf['loc'] -= len(tdf) / 2
                     tdf['sample'] = sample
-                    if categories is not None:
-                        if sample in categories.keys():
-                            tdf['label'] = categories[sample]
-                        else:
-                            tdf['label'] = np.nan
-                    else:
-                        tdf['label'] = sample
-                    if norm == 'raw':
-                        continue
-                    elif norm == 'norm':
+                    tdf['label'] = categories.get(sample, sample) if categories else sample
+                    if norm != 'raw':
                         for col in norm_cols:
-                            tdf[col] = normalize_data(tdf[col])
-                    elif norm == 'stand':
-                        for col in norm_cols:
-                            tdf[col] = standardize_data(tdf[col])
-                    else:
-                        for col in norm_cols:
-                            tdf[col] = scale_data(tdf[col])
-                    if plot_mode == 'TME':
-                        for col in smooth_cols:
-                            tdf[col] = smooth_data(tdf[col])
+                            if norm == 'norm':
+                                tdf[col] = normalize_data(tdf[col])
+                            elif norm == 'stand':
+                                tdf[col] = standardize_data(tdf[col])
+                            else:
+                                tdf[col] = scale_data(tdf[col])
                     dfs.append(tdf)
-            if len(dfs) > 1:
-                df = pd.concat(dfs)
-            else:
-                df = dfs[0]
-            print('- Plotting ' + site)
-            if categories is not None:
+            if skip_site:
+                print(f'No data for {site}. Skipping.')
+                continue
+            df = pd.concat(dfs) if len(dfs) > 1 else dfs[0]
+            print(f'*** Plotting {site}')
+            if categories:
                 df = df[df['label'].notna()]
                 if len(df['label']) < 2:
-                    print('No samples to plot after matching against the provided categories file. Please ensure '
-                          'provided labels are an exact match! Categories provided: ')
-                    print(categories.keys)
-                    print('Sample names provided: ')
-                    print(samples)
+                    print(f'No samples to plot after matching against the provided categories file. Please ensure '
+                          f'provided labels are an exact match! Categories provided: {categories.keys()}')
+                    print(f'Sample names provided: {samples}')
                     print('Exiting.')
                     quit()
-            if plot_mode == 'TME':
-                df = pd.melt(df, id_vars=['sample', 'loc', 'label'], value_vars=cols_me, var_name='profile')
-            else:
-                df = pd.melt(df, id_vars=['sample', 'loc', 'label'], value_vars=cols, var_name='profile')
-            plot_profiles(site, df, plot_mode, palette=palette)
-
+            df = pd.melt(df, id_vars=['sample', 'loc', 'label'], value_vars=cols, var_name='profile')
+            plot_profiles(site, df, plot_mode, norm, region, palette=palette)
 
 if __name__ == "__main__":
     main()
