@@ -19,8 +19,8 @@ Updates in Version 3 (v0.3.1):
 * Methylation mode, which accepted Bismarck output files as inputs, has been discontinued (see version 0.2.2)
 * Triton now outputs a fragment end profile instead of the probable nucleosome center profile, which was generally redundant with the phased-nucleosome profile
 * All operations in Triton now use numpy arrays exclusively, leading to an increase in efficiency
-* Updated annotation files for transcription start sites (TSS), transcript bodies, and composite transfription factors [(see inputs)](#inputs-extra-details))
-* Window size for window and composite-window modes now defaults to +/-1000 bp
+* Updated annotation files for transcription start sites (TSS), transcript bodies, and composite transfription factors [(see inputs)](#inputs-extra-details)
+* Window size for window and composite-window modes now defaults to +/-1000 bp (2000 bp)
 * Bands of coverage without enough overlapping fragments to perform fragmentomics analyses now return 0s as opposed to NaNs
 
 ### Outputs
