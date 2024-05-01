@@ -275,14 +275,15 @@ def generate_profile(region, params):
             return site, fragment_lengths, None, None, depth
         else:
             return site, fragment_lengths, csr_matrix(fragment_length_profile), fragment_end_profile, depth
-    
-    # if subtracting a background panel, do that now -------------------------------------------------------------------
-    if subtract_panel is not None and subtract_panel != "None":
-        fragment_lengths, fragment_length_profile, fragment_end_profile, depth = subtract_background(fragment_lengths, fragment_length_profile, fragment_end_profile, depth, background_dict[site], tfx)
 
     # generate phased profile and phasing/region-level features --------------------------------------------------------
     if np.count_nonzero(depth) < 0.8 * roi_length:  # skip sites with less than 80% base coverage (changed from 90%)
         return (site,) + (np.nan,) * 19 + ([],)
+    
+    # if subtracting a background panel, do that now
+    if subtract_panel is not None and subtract_panel != "None":
+        fragment_lengths, fragment_length_profile, fragment_end_profile, depth = subtract_background(fragment_lengths, fragment_length_profile, fragment_end_profile, depth, background_dict[site], tfx)
+    
     mean_depth = np.mean(depth[500:-500])
     fourier = rfft(nc_signal)
     freqs = rfftfreq(roi_length)
@@ -457,7 +458,7 @@ def main():
         """ N.B. that when running in panel generation mode, the results can get very large and cause errors when passing back through
         the multiprocessing pool. To avoid this, the batch size must be reduced, e.g. for panel generation of full-length transcripts
         use a batch size of ***10*** which has a slower overhead but shouldn't fail. """
-        chunksize = max(1, len(sites) // (cpus * 10))
+        chunksize = max(10, len(sites) // (cpus * 100))
         results = list(pool.imap_unordered(partial(generate_profile, params=params), sites, chunksize))
 
     # below is for running NOT in parallel (testing mode)

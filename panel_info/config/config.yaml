@@ -8,10 +8,9 @@
 ################
 
 cluster_slurm: config/cluster_slurm.yaml # used to get info about available CPUs
-annotation: config/site_lists/MANE.GRCh38.v1.3_TranscriptBodies.bed # transcript bodies; use --run_mode=region
+# annotation: config/site_lists/MANE.GRCh38.v1.3_TranscriptBodies.bed # transcript bodies; use --run_mode=region
 # annotation: config/site_lists/MANE.GRCh38.v1.3_TSS.bed # transcription start sites; use --run_mode=window
-# annotation: config/site_lists/GTRD_F1000.tsv # filtered TFBS lists (1,000 sites per); use --run_mode=composite-window
-# annotation: config/site_lists/GTRD_F10000.tsv # filtered TFBS lists (10,000 sites per); use --run_mode=composite-window
+annotation: config/site_lists/GTRD_F1000.tsv # filtered TFBS lists (1,000 sites per); use --run_mode=composite-window
 
 ##############
 # parameters #
@@ -21,4 +20,4 @@ reference_genome: /fh/fast/ha_g/grp/reference/GRCh38/Broad_bundle_hg38/v0/Homo_s
 results_dir: results # where your results will go
 map_quality: 20 # minimum mapping quality to keep a read
 size_range: 15 500 # range of fragment lengths to be used for analysis
-run_mode: region # region, window, or composite-window
+run_mode: composite-window # region, window, or composite-window

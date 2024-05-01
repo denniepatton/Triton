@@ -168,10 +168,12 @@ def subtract_background(frag_lengths, frag_lengths_prof, frag_ends_profile, dept
     Subtracts background from a site's fragment length profile
         Parameters:
             frag_lengths (np.array): 1D array of fragment length counts, where the index is the fragment length
-            frag_length_prof (scipy.sparse.csr_matrix): a sparse matrix of shape (501, window) where each column represents fragment_lengths at that position
+            frag_length_prof (np.array): 2D array of shape (501, window) where each column represents fragment_lengths at that position
             frag_end_profile (np.array): 1D array of fragment end counts
             depth (np.array): 1D array of read counts
             site_dict (dict): dictionary of site-specific background values
+                Contained are 'fragment_lengths', 'fragment_length_profile', 'fragment_end_profile', and 'depth' which have been
+                normalized to sum to 1 (lengths, histogram-wise) or to have mean of 1 (depth)
             tfx (float): TFX value for site (sample)
         Returns:
             frag_lengths: np.array of fragment length counts
@@ -182,47 +184,40 @@ def subtract_background(frag_lengths, frag_lengths_prof, frag_ends_profile, dept
     bg_purity = (1 - tfx)
     # Get background values for site
     frag_lengths_bg = site_dict['fragment_lengths']
-    frag_lengths_prof_bg = site_dict['fragment_length_profile'].toarray()
+    frag_lengths_prof_bg = site_dict['fragment_length_profile']
     frag_ends_profile_bg = site_dict['fragment_end_profile']
     depth_bg = site_dict['depth']
 
     # Subtract background from fragment length counts
     frag_lengths_counts = np.sum(frag_lengths)
-    frag_lengths_norm = frag_lengths / frag_lengths_counts
-    frag_lengths_bg_norm = frag_lengths_bg / np.sum(frag_lengths_bg)
-    frag_lengths_sub = frag_lengths_norm - bg_purity * frag_lengths_bg_norm
+    frag_lengths_sub = frag_lengths - bg_purity * frag_lengths_counts * frag_lengths_bg
     frag_lengths_sub[frag_lengths_sub < 0] = 0
-    frag_lengths_sub = np.round(frag_lengths_sub * frag_lengths_counts)
+    frag_lengths_sub = np.round(frag_lengths_sub)
 
     if frag_lengths_prof_bg is not None:
         # Subtract background from fragment length profile
         frag_lengths_prof_counts = np.sum(frag_lengths_prof, axis=0)
-        frag_lengths_prof_norm = frag_lengths_prof / frag_lengths_prof_counts
-        frag_lengths_prof_bg_norm = frag_lengths_prof_bg / np.sum(frag_lengths_prof_bg, axis=0)
-        frag_lengths_prof_sub = frag_lengths_prof_norm - bg_purity * frag_lengths_prof_bg_norm
+        frag_lengths_prof_sub = frag_lengths_prof - bg_purity * frag_lengths_prof_counts * frag_lengths_prof_bg
         frag_lengths_prof_sub[frag_lengths_prof_sub < 0] = 0
-        frag_lengths_prof_sub = np.round(frag_lengths_prof_sub * frag_lengths_prof_counts)
+        frag_lengths_prof_sub = np.round(frag_lengths_prof_sub)
     else:
-        # Skip, as this was run in region mode and
+        # Skip, as this was run in region mode
         frag_lengths_prof_sub = frag_lengths_prof
 
     if frag_ends_profile_bg is not None:
         # Subtract background from fragment end profile
         frag_ends_profile_counts = np.sum(frag_ends_profile)
-        frag_ends_profile_norm = frag_ends_profile / frag_ends_profile_counts
-        frag_ends_profile_bg_norm = frag_ends_profile_bg / np.sum(frag_ends_profile_bg)
-        frag_ends_profile_sub = frag_ends_profile_norm - bg_purity * frag_ends_profile_bg_norm
+        frag_ends_profile_sub = frag_ends_profile - bg_purity * frag_ends_profile_counts * frag_ends_profile_bg
         frag_ends_profile_sub[frag_ends_profile_sub < 0] = 0
-        frag_ends_profile_sub = frag_ends_profile_sub * frag_ends_profile_counts
+        frag_ends_profile_sub = np.round(frag_ends_profile_sub)
     else:
+        # Skip, as this was run in region mode
         frag_ends_profile_sub = frag_ends_profile
 
     # Subtract background from depth
     mean_depth = np.mean(depth[500:-500])
-    depth_norm = depth / mean_depth
-    depth_bg_norm = depth_bg / np.mean(depth_bg[500:-500])
-    depth_sub = depth_norm - bg_purity * depth_bg_norm
+    depth_sub = depth - bg_purity * mean_depth * depth_bg
     depth_sub[depth_sub < 0] = 0
-    depth_sub = depth_sub * mean_depth
 
     return frag_lengths_sub, frag_lengths_prof_sub, frag_ends_profile_sub, depth_sub
+

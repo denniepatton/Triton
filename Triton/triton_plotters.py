@@ -232,15 +232,16 @@ def main():
     tests_data = [np.load(path) for path in input_path]
 
     for site in tests_data[0].files:
-
         if sites_path is None or site in sites:
-            skip_site = False
             columns = cols
             dfs = []
+            print(f'*** Processing samples for {site}')
             for sample, test_data in zip(samples, tests_data):
-                print(f'Processing {site} for {sample}')
+                if categories is not None and sample not in categories:
+                    print(f'Sample {sample} not found in categories. Skipping.')
+                    continue
                 if pd.isnull(test_data[site]).all():
-                    skip_site = True
+                    print(f'No data for {site} for sample {sample}. Skipping.')
                     continue
                 if len(test_data[site].shape) == 2:
                     tdf = pd.DataFrame(test_data[site].T, columns=columns)
@@ -258,7 +259,7 @@ def main():
                             else:
                                 tdf[col] = scale_data(tdf[col])
                     dfs.append(tdf)
-            if skip_site:
+            if not dfs:
                 print(f'No data for {site}. Skipping.')
                 continue
             df = pd.concat(dfs) if len(dfs) > 1 else dfs[0]
@@ -267,7 +268,7 @@ def main():
                 df = df[df['label'].notna()]
                 if len(df['label']) < 2:
                     print(f'No samples to plot after matching against the provided categories file. Please ensure '
-                          f'provided labels are an exact match! Categories provided: {categories.keys()}')
+                        f'provided labels are an exact match! Categories provided: {categories.keys()}')
                     print(f'Sample names provided: {samples}')
                     print('Exiting.')
                     quit()

@@ -29,7 +29,8 @@ rule generate_panel:
         bam_path = lambda wildcards: config["samples"][wildcards.samples]['bam'],
         bias_path = lambda wildcards: config["samples"][wildcards.samples]['GC_bias']
     output:
-        temp("{results_dir}/{samples}_TritonRawPanel_{annotation}.npz".format(results_dir=config['results_dir'], samples="{samples}", annotation=stripped_annotation))
+        "{results_dir}/{samples}_TritonRawPanel_{annotation}.npz".format(results_dir=config['results_dir'], samples="{samples}", annotation=stripped_annotation)
+        # temp("{results_dir}/{samples}_TritonRawPanel_{annotation}.npz".format(results_dir=config['results_dir'], samples="{samples}", annotation=stripped_annotation))
     params:
         sample_name = "{samples}",
         annotation = config['annotation'],
@@ -46,6 +47,7 @@ rule generate_panel:
         --reference_genome {params.reference_genome} \
         --results_dir {params.results_dir} --map_quality {params.map_quality} \
         --size_range {params.size_range} --cpus {params.cpus} \
+        --frag_dict ../nc_info/NCDict.pkl \
         --run_mode {params.run_mode} --generate_panel "
 
 rule triton_panel:
