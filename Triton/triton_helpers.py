@@ -163,7 +163,7 @@ def nearest_peaks(ref_point, ref_list):
 
     return left_index, right_index
 
-def subtract_background(frag_lengths, frag_lengths_prof, frag_ends_profile, depth, site_dict, tfx):
+def subtract_background(frag_lengths, frag_lengths_prof, frag_ends_profile, depth, nc_signal, site_dict, tfx, window):
     """
     Subtracts background from a site's fragment length profile
         Parameters:
@@ -171,53 +171,82 @@ def subtract_background(frag_lengths, frag_lengths_prof, frag_ends_profile, dept
             frag_length_prof (np.array): 2D array of shape (501, window) where each column represents fragment_lengths at that position
             frag_end_profile (np.array): 1D array of fragment end counts
             depth (np.array): 1D array of read counts
+            nc_signal (np.array): 1D array of nucleosomal signal
             site_dict (dict): dictionary of site-specific background values
                 Contained are 'fragment_lengths', 'fragment_length_profile', 'fragment_end_profile', and 'depth' which have been
-                normalized to sum to 1 (lengths, histogram-wise) or to have mean of 1 (depth)
+                normalized to sum to 1 (lengths- histogram-wise, and nc_signal) or to have mean of 1 (depth). This is because we want
+                to scale histograms and nc_signal to have the same total *number of reads* as background when subtracting, but for depth,
+                which does not have area proportional to number of reads (due to variable fragment lengths), we want to scale to have the
+                same mean depth which is more reflective of how the signals scale.
             tfx (float): TFX value for site (sample)
+            window (int): window size for signal profiles, or None if in region mode
         Returns:
             frag_lengths: np.array of fragment length counts
             frag_length_prof: np.array of fragment length profile
             frag_end_profile: np.array of fragment end counts
             depth: np.array of read counts
+            nc_signal: np.array of nucleosomal signal
     """
-    bg_purity = (1 - tfx)
     # Get background values for site
     frag_lengths_bg = site_dict['fragment_lengths']
     frag_lengths_prof_bg = site_dict['fragment_length_profile']
     frag_ends_profile_bg = site_dict['fragment_end_profile']
     depth_bg = site_dict['depth']
+    nc_signal_bg = site_dict['nc_signal']
 
     # Subtract background from fragment length counts
-    frag_lengths_counts = np.sum(frag_lengths)
-    frag_lengths_sub = frag_lengths - bg_purity * frag_lengths_counts * frag_lengths_bg
-    frag_lengths_sub[frag_lengths_sub < 0] = 0
-    frag_lengths_sub = np.round(frag_lengths_sub)
+    frag_lengths_counts = frag_lengths.sum()
+    frag_lengths_norm = frag_lengths / frag_lengths_counts
+    frag_lengths_sub_norm = np.maximum((frag_lengths_norm - (1 - tfx) * frag_lengths_bg) / tfx, 0)
+    frag_lengths_sub_norm /= frag_lengths_sub_norm.sum()  # re-normalize
+    frag_lengths_sub = np.round(frag_lengths_sub_norm * frag_lengths_counts)  # re-scale to original counts
 
     if frag_lengths_prof_bg is not None:
         # Subtract background from fragment length profile
         frag_lengths_prof_counts = np.sum(frag_lengths_prof, axis=0)
-        frag_lengths_prof_sub = frag_lengths_prof - bg_purity * frag_lengths_prof_counts * frag_lengths_prof_bg
-        frag_lengths_prof_sub[frag_lengths_prof_sub < 0] = 0
-        frag_lengths_prof_sub = np.round(frag_lengths_prof_sub)
+        frag_lengths_prof_norm = frag_lengths_prof / frag_lengths_prof_counts
+        frag_lengths_prof_sub_norm = np.maximum((frag_lengths_prof_norm - (1 - tfx) * frag_lengths_prof_bg) / tfx, 0)
+        frag_lengths_prof_sub_norm /= frag_lengths_prof_sub_norm.sum(axis=0)  # re-normalize
+        frag_lengths_prof_sub = np.round(frag_lengths_prof_sub_norm * frag_lengths_prof_counts)  # re-scale to original counts
     else:
         # Skip, as this was run in region mode
         frag_lengths_prof_sub = frag_lengths_prof
 
     if frag_ends_profile_bg is not None:
         # Subtract background from fragment end profile
-        frag_ends_profile_counts = np.sum(frag_ends_profile)
-        frag_ends_profile_sub = frag_ends_profile - bg_purity * frag_ends_profile_counts * frag_ends_profile_bg
-        frag_ends_profile_sub[frag_ends_profile_sub < 0] = 0
-        frag_ends_profile_sub = np.round(frag_ends_profile_sub)
+        frag_ends_profile_counts = np.sum(frag_ends_profile, axis=0)
+        frag_ends_profile_norm = frag_ends_profile / frag_ends_profile_counts
+        frag_ends_profile_sub_norm = np.maximum((frag_ends_profile_norm - (1 - tfx) * frag_ends_profile_bg) / tfx, 0)
+        frag_ends_profile_sub_norm /= frag_ends_profile_sub_norm.sum(axis=0)  # re-normalize
+        frag_ends_profile_sub = np.round(frag_ends_profile_sub_norm * frag_ends_profile_counts)  # re-scale to original counts
     else:
         # Skip, as this was run in region mode
         frag_ends_profile_sub = frag_ends_profile
 
-    # Subtract background from depth
-    mean_depth = np.mean(depth[500:-500])
-    depth_sub = depth - bg_purity * mean_depth * depth_bg
-    depth_sub[depth_sub < 0] = 0
+    def process_signal(signal, background, tfx):
+        if window is not None:
+            # Scale ignoring the central 500 bp
+            half = len(signal) // 2
+            mean_signal = np.mean(np.concatenate((signal[:half-250], signal[half+250:])))
+            mean_bg = np.mean(np.concatenate((background[:half-250], background[half+250:])))
+        else:
+            mean_signal = np.mean(signal)
+            mean_bg = np.mean(background)
+        # Scale the signal and the background to have the same (flanking) mean
+        signal_scaled = signal / mean_signal
+        background_scaled = background / mean_bg
+        # Subtract the scaled background from the scaled signal
+        signal_sub = signal_scaled - (1 - tfx) * background_scaled
+        # Add a constant to avoid negative values, if they occur
+        if np.any(signal_sub < 0):
+            signal_sub -= np.min(signal_sub)
+        # Re-scale the signal to have the same mean as original signal
+        signal_sub = signal_sub * mean_signal / np.mean(signal_sub)
+        return signal_sub
 
-    return frag_lengths_sub, frag_lengths_prof_sub, frag_ends_profile_sub, depth_sub
+    # Apply the function to depth and nc_signal
+    depth_sub = process_signal(depth, depth_bg, tfx)
+    nc_signal_sub = process_signal(nc_signal, nc_signal_bg, tfx)
+
+    return frag_lengths_sub, frag_lengths_prof_sub, frag_ends_profile_sub, depth_sub, nc_signal_sub
 

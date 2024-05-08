@@ -272,17 +272,18 @@ def generate_profile(region, params):
         So, subtraction for scalar features is still conducted.
         """
         if run_mode == 'region':
-            return site, fragment_lengths, None, None, depth
+            return site, fragment_lengths, None, None, depth, nc_signal
         else:
-            return site, fragment_lengths, csr_matrix(fragment_length_profile), fragment_end_profile, depth
+            return site, fragment_lengths, csr_matrix(fragment_length_profile), fragment_end_profile, depth, nc_signal
+        
+    # if subtracting a background panel, do that now
+    if subtract_panel is not None and subtract_panel != "None":
+        fragment_lengths, fragment_length_profile, fragment_end_profile, depth, nc_signal = subtract_background(fragment_lengths, fragment_length_profile, fragment_end_profile, depth, nc_signal, background_dict[site], tfx, window)
+    
 
     # generate phased profile and phasing/region-level features --------------------------------------------------------
     if np.count_nonzero(depth) < 0.8 * roi_length:  # skip sites with less than 80% base coverage (changed from 90%)
         return (site,) + (np.nan,) * 19 + ([],)
-    
-    # if subtracting a background panel, do that now
-    if subtract_panel is not None and subtract_panel != "None":
-        fragment_lengths, fragment_length_profile, fragment_end_profile, depth = subtract_background(fragment_lengths, fragment_length_profile, fragment_end_profile, depth, background_dict[site], tfx)
     
     mean_depth = np.mean(depth[500:-500])
     fourier = rfft(nc_signal)
@@ -310,7 +311,7 @@ def generate_profile(region, params):
     peak_profile = np.zeros(roi_length - 1000, dtype=int)
     peak_profile[peaks] = 1
     peak_profile[troughs] = -1
-    if window is not None:
+    if window is not None and len(peaks) > 0 and len(troughs) > 0:
         # first find the peak/trough nearest to the window's center
         inflection_loc = np.argmin(np.abs(np.concatenate([peaks, troughs]) - int(window / 2))) + int(window/2)
         inflection = phased_signal[inflection_loc] # value at the inflection location
@@ -471,7 +472,7 @@ def main():
         # Get the base name of sites_path without the extension
         annotation_name = os.path.splitext(os.path.basename(sites_path))[0]
         # Create a dictionary where the keys are the site IDs and the values are dictionaries containing the other data
-        data_dict = {site: {'fragment_lengths': fragment_lengths, 'fragment_length_profile': fragment_length_profile, 'fragment_end_profile': fragment_end_profile, 'depth': depth} for site, fragment_lengths, fragment_length_profile, fragment_end_profile, depth in results}
+        data_dict = {site: {'fragment_lengths': fragment_lengths, 'fragment_length_profile': fragment_length_profile, 'fragment_end_profile': fragment_end_profile, 'depth': depth, 'nc_signal': nc_signal} for site, fragment_lengths, fragment_length_profile, fragment_end_profile, depth, nc_signal in results}
         # Save the data in compressed format
         np.savez_compressed(os.path.join(results_dir, sample_name + '_TritonRawPanel_' + annotation_name), data=data_dict)
         print('\nFinished')

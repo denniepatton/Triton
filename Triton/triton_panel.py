@@ -13,7 +13,7 @@ def load_file(file):
     return data
 
 def normalize_data(data, key, convert_to_dense=True):
-    if key == 'fragment_lengths':
+    if key == 'fragment_lengths' or key == 'fragment_end_profile':
         # Normalize so that the sum of the array is 1
         return data / np.sum(data)
     elif key == 'fragment_length_profile':
@@ -22,10 +22,7 @@ def normalize_data(data, key, convert_to_dense=True):
             data = csr_matrix(data).toarray()
         sum_data = np.sum(data, axis=0)
         return np.where(sum_data != 0, data / sum_data, 0)
-    elif key == 'fragment_end_profile':
-        # Normalize by dividing by the sum
-        return data / np.sum(data)
-    elif key == 'depth':
+    elif key == 'depth' or key == 'nc_signal':
         # Normalize by dividing by the mean
         return data / np.mean(data)
     else:
@@ -46,6 +43,7 @@ def main():
     fragment_length_profile (scipy.sparse.csr_matrix -> numpy array): a sparse matrix (in) or array (out) of shape (501, window) where each column represents fragment_lengths at that position
     fragment_end_profile (np.array): a numpy array of shape (window,) where each value represents the number of fragment-ends at that position
     depth (np.array): a numpy array of shape (window,) where each value represents the number of reads at that position
+    nc_signal (np.array): a numpy array of shape (window,) where each value represents piled up likelihood of a nucleosome core particle at that position
     """
     parser = argparse.ArgumentParser(description='\n### triton_panel.py ### combines _TritonRawPanel_*.npz files')
     parser.add_argument('-r', '--results_dir', help='directory for results', required=True)

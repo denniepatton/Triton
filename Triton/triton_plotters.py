@@ -49,47 +49,67 @@ profile_labels = {'depth': 'depth',
 norm_cols = ['depth', 'frag-ends', 'phased-signal', 'frag-ratio', 'frag-diversity', 'frag-entropy']
 
 
-def normalize_data(data):
+def normalize_data(data, region=False):
     """
     Normalizes signal (re-scales from 0-1)
         Parameters:
             data (vector-like array): signal profile from Triton
+            region (bool): if False, central 500 values are ignored in normalization calculation
         Returns:
             normalized_data
     """
-    min_val = np.min(data)
-    max_val = np.max(data)
+    if not region:
+        half = len(data) // 2
+        min_val = np.min(np.concatenate((data[:half-250], data[half+250:])))
+        max_val = np.max(np.concatenate((data[:half-250], data[half+250:])))
+    else:
+        min_val = np.min(data)
+        max_val = np.max(data)
+
     if max_val - min_val == 0:
         return data - min_val  # non-signal: 0s
     else:
         return (data - min_val) / (max_val - min_val)
 
 
-def standardize_data(data):
+def standardize_data(data, region=False):
     """
     Standardizes signal, AKA transforms to Z-score (centers the signal and re-scales)
         Parameters:
             data (vector-like array): signal profile from Triton
+            region (bool): if False, central 500 values are ignored in normalization calculation
         Returns:
             standardized_data
     """
-    mean_val = np.mean(data)
-    stdev_val = np.std(data)
+    if not region:
+        half = len(data) // 2
+        mean_val = np.mean(np.concatenate((data[:half-250], data[half+250:])))
+        stdev_val = np.std(np.concatenate((data[:half-250], data[half+250:])))
+    else:
+        mean_val = np.mean(data)
+        stdev_val = np.std(data)
+
     if stdev_val == 0:
         return data - mean_val  # non-signal: 0s
     else:
         return (data - mean_val) / stdev_val
 
 
-def scale_data(data):
+def scale_data(data, region=False):
     """
     Scales signal mean to 1 (preserves potential differences in magnitude of signal variation)
         Parameters:
             data (vector-like array): signal profile from Triton
+            region (bool): if False, central 500 values are ignored in normalization calculation
         Returns:
             scaled_data
     """
-    mean_val = np.mean(data)
+    if not region:
+        half = len(data) // 2
+        mean_val = np.mean(np.concatenate((data[:half-250], data[half+250:])))
+    else:
+        mean_val = np.mean(data)
+
     if mean_val == 0:
         return data
     else:
@@ -253,11 +273,11 @@ def main():
                     if norm != 'raw':
                         for col in norm_cols:
                             if norm == 'norm':
-                                tdf[col] = normalize_data(tdf[col])
+                                tdf[col] = normalize_data(tdf[col], region=region)
                             elif norm == 'stand':
-                                tdf[col] = standardize_data(tdf[col])
+                                tdf[col] = standardize_data(tdf[col], region=region)
                             else:
-                                tdf[col] = scale_data(tdf[col])
+                                tdf[col] = scale_data(tdf[col], region=region)
                     dfs.append(tdf)
             if not dfs:
                 print(f'No data for {site}. Skipping.')
