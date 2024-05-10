@@ -224,6 +224,9 @@ def subtract_background(frag_lengths, frag_lengths_prof, frag_ends_profile, dept
         frag_ends_profile_sub = frag_ends_profile
 
     def process_signal(signal, background, tfx):
+        """ N.B. I am attempting to subtract the background from the signal in a way that preserves both the signal's shape
+        and the signal's mean. This is done by scaling the signal and the background to have the same (flanking) mean, and and also
+        shifting the background constant to keep the ratio of variation, in terms of MAD from mean, similar before and after."""
         if window is not None:
             # Scale ignoring the central 500 bp
             half = len(signal) // 2
