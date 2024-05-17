@@ -14,7 +14,7 @@ __default__:
 
 triton_main:
     partition: campus-new
-    mem: 128G # defaults to 4Gb x ncpus
+    mem: 64G # defaults to 4Gb x ncpus
     ncpus: 8 # number of cores to process each sample
     output: logs/cluster/{rule}.{wildcards.samples}.%A.out
     JobName: "{rule}.{wildcards.samples}"
