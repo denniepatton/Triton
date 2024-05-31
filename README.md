@@ -2,8 +2,7 @@
 As a cell free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic and phased-nucleosome coverage analyses on individual or
 composite genomic regions and outputs both region-level biomarkers and nt-resolution signal profiles, with optional purity correction.
 
-_Triton_ is named for the Greek deity who served as messenger of the deep and would blow a conch shell to calm or raise the waves.
-Like Triton, this tool has the power to see beyond the waves and carry messages from the deep.
+_Triton_ is named for the Greek deity who served as messenger of the deep and would blow a conch shell to calm or raise the waves. Like Triton, this tool has the power to see beyond the waves and carry messages from the deep.
 <br/><br/>
 
 ## Description
@@ -236,7 +235,9 @@ If using the snakemake, ensure the correct (matching) panel is indicated in conf
 "tfx" value for each sample (see config/example_samples_tfx.yaml).
 
 N.B. that in "region" mode Triton will not generate fragmentation-signal background panels, and will not perform fragmentation-signal subtraction.
-However, scalar feature outputs will still undergo background subtraction as expected.  
+However, scalar feature outputs will still undergo background subtraction as expected.
+
+*Panel subtraction mode is a work in progress, and its efficacy has not been fully validated! Feel free to test and contribute. Current testing shows a strong dependence on depth for good efficacy.*
 
 ### Methodology
 
