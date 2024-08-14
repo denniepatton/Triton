@@ -63,20 +63,26 @@ def get_gc_bias_dict(bias_path):
 
 def frag_metrics(frag_lengths, bins, reduce=False):
     """
-    Returns the mean, standard deviation, median, median absolute deviation, ratio of short (f <= 150)
-    to long (151 <= f)*, diversity, and Shannon entropy of fragment lengths given an input of fragment length counts.
-    * Used to be short (f <= 120) to long (140 <= f <= 250)
-        Parameters:
-            frag_lengths (np.array): 1D array of fragment length counts, where the index is the fragment length
-            bins (np.array): list of bin boundaries
-            reduce (bool): if true, only output ratio, diversity, and entropy (save time on signal profiles)
-        Returns:
-            mean, stdev, MAD, ratio (float, float, int, float)
-    N.B. since a histogram-array is being passed, I am doing some "fancy math" to save time and space
+    Returns various metrics of fragment lengths given an input of fragment length counts.
+    
+    Parameters:
+        frag_lengths (np.array): 1D array of fragment length counts, where the index is the fragment length - 1 (1 indexed)
+        bins (np.array): list of bin boundaries
+        reduce (bool): if true, only output ratio, diversity, and entropy (save time on signal profiles)
+    
+    Returns:
+        Tuple containing:
+            - mean (float)
+            - stdev (float)
+            - median (float)
+            - mad (float)
+            - ratio (float)
+            - diversity (float)
+            - entropy (float)
     """
     total_count = np.sum(frag_lengths)
     unique_count = np.count_nonzero(frag_lengths)
-    frag_lengths_long = np.sum(frag_lengths[151:])
+    frag_lengths_long = np.sum(frag_lengths[150:])
     
     if total_count < 2 or unique_count < 2 or frag_lengths_long == 0:  # BARE MINIMUM to get real metrics
         return (0.0,) * (3 if reduce else 7)
@@ -88,35 +94,43 @@ def frag_metrics(frag_lengths, bins, reduce=False):
     if reduce:
         return ratio, diversity, entropy
 
-    mean = np.average(np.arange(len(frag_lengths)), weights=frag_lengths)
-    stdev = np.sqrt(np.average((np.arange(len(frag_lengths)) - mean)**2, weights=frag_lengths))
-    median = np.searchsorted(np.cumsum(frag_lengths), total_count / 2)
-    mad = np.searchsorted(np.cumsum(np.bincount(np.abs(np.arange(len(frag_lengths)) - median), minlength=len(frag_lengths))), total_count / 2)
+    # Calculate mean and standard deviation
+    indices = np.arange(len(frag_lengths)) + 1
+    mean = np.average(indices, weights=frag_lengths)
+    stdev = np.sqrt(np.average((indices - mean) ** 2, weights=frag_lengths))
+
+    # Calculate median
+    cumulative_counts = np.cumsum(frag_lengths)
+    median = np.searchsorted(cumulative_counts, total_count / 2) + 1
+
+    # Calculate MAD (Median Absolute Deviation)
+    deviations = np.abs(indices - median)
+    sorted_indices = np.argsort(deviations)
+    sorted_deviations = deviations[sorted_indices]
+    sorted_counts = frag_lengths[sorted_indices]
+    cumulative_counts = np.cumsum(sorted_counts)
+    median_index = np.searchsorted(cumulative_counts, total_count / 2)
+    mad = sorted_deviations[median_index]
 
     return mean, stdev, median, mad, ratio, diversity, entropy
 
 
 def shannon_entropy(counts, bins):
     """
-    Returns the Shannon Entropy of a set of values; will bin with "bins" bins
+    Returns the max-normalized Shannon Entropy of a set of values, ignoring bins with 0 counts.
         Parameters:
-            counts (list/array): 1D array of fragment length counts, where the index is the fragment length
-            bins (np.array): list of bin boundaries
+            counts (list/array): 1D array of fragment length counts, where the index is the fragment length -1 (1 indexed).
+            bins (np.array): list of bin boundaries.
         Returns:
-            float: Shannon Entropy
+            float: Max-normalized Shannon Entropy.
     """
-    # Calculate histogram using numpy's advanced indexing and binning
-    histogram = np.add.reduceat(counts, bins[:-1])
-    total_counts = histogram.sum()
-
-    if total_counts < 2:
-        return 0
-
-    pdist = histogram / total_counts
-    nonzero_pdist = pdist[pdist != 0.0]
-    moments = nonzero_pdist * np.log(nonzero_pdist) / np.log(total_counts)
-
-    return -moments.sum()
+    histogram, _ = np.histogram(counts, bins=bins)
+    non_zero_histogram = histogram[histogram > 0]
+    total_counts = non_zero_histogram.sum()
+    pdist = non_zero_histogram / total_counts
+    entropy = -np.sum(pdist * np.log2(pdist))
+    max_entropy = np.log2(len(bins))
+    return entropy / max_entropy if len(non_zero_histogram) > 1 else 0.0
 
 
 def local_peaks(ys, xs):

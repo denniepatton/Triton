@@ -16,7 +16,7 @@ from triton_helpers import *
 # constants and defaults
 iupac_trans = str.maketrans('ACGTURYSWKMBDHVNX',
                             '06600336033422430') # likelihood of GC content for each bp code, times 6 (common factor)
-bin_range = np.array(range(15, 500, 5))  # hardcoded for dict-based analyses of range 15-500 > bins for Shannon Entropy
+bin_range = np.array(range(15, 505, 5))  # [15, 20, . . . , 495, 500] hardcoded for dict-based analyses of range 15-500 > bins for Shannon Entropy
 freq_max = 1.0 / 146.0  # theoretical minimum nucleosome period is 146 bp -> f = 0.0068493
 low_1, high_1 = 0.00556, 0.00667  # range_1: T = 150-180 bp (f = 0.00556 - 0.00667, "small linker")
 low_2, high_2 = 0.00476, 0.00555  # range_2: T = 180-210 bp (f = 0.00476 - 0.00555, "large linker")
@@ -84,7 +84,7 @@ def generate_profile(region, params):
         bias_limit = 0.10  # use a stricter GC-bias range for composite regions where depth is higher
     bam = pysam.AlignmentFile(bam_path, 'rb')
     ref_seq = pysam.FastaFile(ref_seq_path)
-    fragment_lengths = np.zeros(frag_range[1] + 1, dtype=int)  # empty fragment length *histogram*
+    fragment_lengths = np.zeros(frag_range[1], dtype=int)  # empty fragment length *histogram*
     skipped_sites = []  # for storing skipped sites in composite-window mode
 
     if stack:
@@ -99,8 +99,8 @@ def generate_profile(region, params):
             for entry in sites_file:  # iterate through regions in this particular BED file
                 site_depth, site_nc_signal = np.zeros(roi_length), np.zeros(roi_length)
                 site_fragment_ends = np.zeros(window)
-                site_fragment_lengths = np.zeros(frag_range[1] + 1, dtype=int)
-                site_fragment_length_profile = np.zeros((frag_range[1] + 1, window), dtype=int)
+                site_fragment_lengths = np.zeros(frag_range[1], dtype=int)
+                site_fragment_length_profile = np.zeros((frag_range[1], window), dtype=int)
                 bed_tokens = entry.strip().split('\t')
                 if not bed_tokens[pos_idx].isdigit(): continue  # header or typo line
                 chrom, center_pos = str(bed_tokens[chr_idx]), int(bed_tokens[pos_idx])
@@ -148,7 +148,7 @@ def generate_profile(region, params):
                         fragment_cov = np.arange(fragment_start, fragment_end)
                         center_in_window = 500 <= np.take(fragment_cov, abs_length // 2) <= roi_length - 501
                         if center_in_window:
-                            site_fragment_lengths[abs_length] += 1
+                            site_fragment_lengths[abs_length - 1] += 1
                         nc_density = fdict[abs_length] if 146 <= abs_length <= 500 else None
                         if bias_limit < fragment_bias < 10:
                             if strand == '+':  # positive strand:
@@ -158,7 +158,7 @@ def generate_profile(region, params):
                                     if nc_density is not None:
                                         site_nc_signal[index] += nc_density[place] / fragment_bias
                                     if 500 <= index <= roi_length - 501:
-                                        site_fragment_length_profile[abs_length, index - 500] += 1
+                                        site_fragment_length_profile[abs_length - 1, index - 500] += 1
                                         if place == 0 or place == len(fragment_cov) - 1:
                                             site_fragment_ends[index - 500] += 1
                             else:  # negative strand:
@@ -168,7 +168,7 @@ def generate_profile(region, params):
                                     if nc_density is not None:
                                         site_nc_signal[roi_length - index -1] += nc_density[place] / fragment_bias
                                     if 500 <= index <= roi_length - 501:  # no buffer for frag lengths
-                                        site_fragment_length_profile[abs_length, roi_length - index - 501] += 1
+                                        site_fragment_length_profile[abs_length - 1, roi_length - index - 501] += 1
                                         if place == 0 or place == len(fragment_cov) - 1:
                                             site_fragment_ends[roi_length - index - 501] += 1
                 # check for egregious outliers in site, and drop site if found
@@ -209,13 +209,13 @@ def generate_profile(region, params):
             center_pos = int(bed_tokens[pos_idx])
             start_pos = center_pos - int(roi_length / 2)
             stop_pos = center_pos + int(roi_length / 2)
-            fragment_length_profile = np.zeros((frag_range[1] + 1, window), dtype=int)
+            fragment_length_profile = np.zeros((frag_range[1], window), dtype=int)
             fragment_end_profile = np.zeros(window)
         else:
             start_pos = int(bed_tokens[start_idx]) - 500
             stop_pos = int(bed_tokens[stop_idx]) + 500
             roi_length = stop_pos - start_pos
-            fragment_length_profile = np.zeros((frag_range[1] + 1, roi_length - 1000), dtype=int)
+            fragment_length_profile = np.zeros((frag_range[1], roi_length - 1000), dtype=int)
             fragment_end_profile = np.zeros(roi_length - 1000)
         depth, nc_signal = np.zeros(roi_length), np.zeros(roi_length)
         # process all fragments falling inside the site
@@ -245,7 +245,7 @@ def generate_profile(region, params):
                 fragment_cov = np.arange(fragment_start, fragment_end)
                 center_in_window = 500 <= np.take(fragment_cov, abs_length // 2) <= roi_length - 501
                 if center_in_window:
-                    fragment_lengths[abs_length] += 1
+                    fragment_lengths[abs_length - 1] += 1
                 nc_density = fdict[abs_length] if 146 <= abs_length <= 500 else None
                 if bias_limit < fragment_bias < 10:
                     for place, index in enumerate(fragment_cov):
@@ -255,7 +255,7 @@ def generate_profile(region, params):
                         if nc_density is not None:
                             nc_signal[index] += nc_density[place] / fragment_bias
                         if 500 <= index <= roi_length - 501:
-                            fragment_length_profile[abs_length, index - 500] += 1
+                            fragment_length_profile[abs_length - 1, index - 500] += 1
                             if place == 0 or place == len(fragment_cov) - 1:
                                 fragment_end_profile[index - 500] += 1
         if strand == "-":
@@ -314,10 +314,10 @@ def generate_profile(region, params):
     if window is not None and len(peaks) > 0 and len(troughs) > 0:
         # first find the peak/trough nearest to the window's center
         inflection_loc = np.argmin(np.abs(np.concatenate([peaks, troughs]) - int(window / 2))) + int(window/2)
-        inflection = phased_signal[inflection_loc] # value at the inflection location
         if not np.isnan(inflection_loc):
             peak_profile[inflection_loc] = 3
             center = len(phased_signal) // 2
+            inflection = phased_signal[inflection_loc] # value at the inflection location
             inflection_depth = inflection / np.mean(np.concatenate((phased_signal[:center-250], phased_signal[center+250:]))) # inflection depth relative to the mean of the flanking regions
             left_max_loc, right_max_loc = nearest_peaks(inflection_loc, peaks)
             if not np.isnan(left_max_loc) and not np.isnan(right_max_loc):
