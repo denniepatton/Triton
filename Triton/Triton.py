@@ -93,7 +93,7 @@ def generate_profile(region, params):
         roi_length = window + 1000  # 500 bp buffers are added to each end for a smooth FFT at the ROI edges
         depth, nc_signal = np.zeros(roi_length), np.zeros(roi_length)
         oh_seq = np.zeros((window, 5))  # bp-frequency-encoded sequence array
-        fragment_length_profile = np.zeros((frag_range[1] + 1, window), dtype=int)  # nt-level fragment histogram matrix
+        fragment_length_profile = np.zeros((frag_range[1], window), dtype=int)  # nt-level fragment histogram matrix
         fragment_end_profile = np.zeros(window)  # nt-level fragment end-points
         with open(region.strip(), 'r') as sites_file:
             for entry in sites_file:  # iterate through regions in this particular BED file
