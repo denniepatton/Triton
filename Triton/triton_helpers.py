@@ -61,13 +61,12 @@ def get_gc_bias_dict(bias_path):
     return bias_dict
 
 
-def frag_metrics(frag_lengths, bins, reduce=False):
+def frag_metrics(frag_lengths, reduce=False):
     """
     Returns various metrics of fragment lengths given an input of fragment length counts.
     
     Parameters:
         frag_lengths (np.array): 1D array of fragment length counts, where the index is the fragment length - 1 (1 indexed)
-        bins (np.array): list of bin boundaries
         reduce (bool): if true, only output ratio, diversity, and entropy (save time on signal profiles)
     
     Returns:
@@ -89,7 +88,7 @@ def frag_metrics(frag_lengths, bins, reduce=False):
 
     ratio = np.sum(frag_lengths[:151]) / frag_lengths_long
     diversity = unique_count / total_count
-    entropy = shannon_entropy(frag_lengths, bins)
+    entropy = shannon_entropy(frag_lengths)
 
     if reduce:
         return ratio, diversity, entropy
@@ -115,22 +114,18 @@ def frag_metrics(frag_lengths, bins, reduce=False):
     return mean, stdev, median, mad, ratio, diversity, entropy
 
 
-def shannon_entropy(counts, bins):
+def shannon_entropy(counts):
     """
-    Returns the max-normalized Shannon Entropy of a set of values, ignoring bins with 0 counts.
+    Returns the max-normalized Shannon Entropy of a set of values.
         Parameters:
             counts (list/array): 1D array of fragment length counts, where the index is the fragment length -1 (1 indexed).
-            bins (np.array): list of bin boundaries.
         Returns:
             float: Max-normalized Shannon Entropy.
     """
-    histogram, _ = np.histogram(counts, bins=bins)
-    non_zero_histogram = histogram[histogram > 0]
-    total_counts = non_zero_histogram.sum()
-    pdist = non_zero_histogram / total_counts
+    pdist = counts / np.sum(counts)
+    pdist = pdist[pdist > 0]
     entropy = -np.sum(pdist * np.log2(pdist))
-    max_entropy = np.log2(len(bins))
-    return entropy / max_entropy if len(non_zero_histogram) > 1 else 0.0
+    return entropy / np.log2(len(counts))
 
 
 def local_peaks(ys, xs):

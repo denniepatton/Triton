@@ -16,7 +16,6 @@ from triton_helpers import *
 # constants and defaults
 iupac_trans = str.maketrans('ACGTURYSWKMBDHVNX',
                             '06600336033422430') # likelihood of GC content for each bp code, times 6 (common factor)
-bin_range = np.array(range(15, 505, 5))  # [15, 20, . . . , 495, 500] hardcoded for dict-based analyses of range 15-500 > bins for Shannon Entropy
 freq_max = 1.0 / 146.0  # theoretical minimum nucleosome period is 146 bp -> f = 0.0068493
 low_1, high_1 = 0.00556, 0.00667  # range_1: T = 150-180 bp (f = 0.00556 - 0.00667, "small linker")
 low_2, high_2 = 0.00476, 0.00555  # range_2: T = 180-210 bp (f = 0.00476 - 0.00555, "large linker")
@@ -342,9 +341,9 @@ def generate_profile(region, params):
         np_amp = (np.mean(max_values) - np.mean(min_values)) / signal_mean
 
     # generate fragment profiles and fragmentation features ------------------------------------------------------------
-    frag_mean, frag_std, frag_med, frag_mad, frag_rat, frag_div, frag_ent = frag_metrics(fragment_lengths, bin_range)
+    frag_mean, frag_std, frag_med, frag_mad, frag_rat, frag_div, frag_ent = frag_metrics(fragment_lengths)
     # fragment profiles | 3 x len(window) where the 3 ordered are: ratio, diversity, entropy
-    signal_metrics = np.apply_along_axis(frag_metrics, axis=0, arr=fragment_length_profile, bins=bin_range, reduce=True)
+    signal_metrics = np.apply_along_axis(frag_metrics, axis=0, arr=fragment_length_profile, reduce=True)
     inflection_div = np.nan
     if not np.isnan(inflection_loc):
         inflection_div = np.mean(signal_metrics[1, (inflection_loc - 5):(inflection_loc + 5)]) / np.mean(np.concatenate((signal_metrics[1, :center-250], signal_metrics[1, center+250:])))
