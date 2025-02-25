@@ -1,313 +1,326 @@
 # Triton <img src="misc/logo_v2.png" width="140" align="left">
-As a cell free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic and phased-nucleosome coverage analyses on individual or
-composite genomic regions and outputs both region-level biomarkers and nt-resolution signal profiles, with optional purity correction.
 
-_Triton_ is named for the Greek deity who served as messenger of the deep and would blow a conch shell to calm or raise the waves. Like Triton, this tool has the power to see beyond the waves and carry messages from the deep.
+As a cell-free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic and phased-nucleosome coverage analyses on individual or
+composite genomic regions and outputs both region-level biomarkers and nucleotide-resolution (nt-resolution) signal profiles,.
+
+_Triton_ is named for the Greek deity who served as messenger of the deep and would blow a conch shell to calm or raise the waves. Like Triton, this tool has the power to see beyond the waves and carry messages from the deep.  
 <br/><br/>
+
+## Table of Contents
+- [Description](#description)
+- [Outputs](#outputs)
+- [Uses](#uses)
+- [Publications](#publications)
+- [Usage](#usage)
+  - [Inputs to Triton.py](#inputs-to-tritonpy)
+  - [Inputs (extra details)](#inputs-extra-details)
+  - [Contained Scripts](#contained-scripts)
+    - [triton_plotters.py](#triton_plotterspy)
+    - [triton_extractors.py](#triton_extractorspy)
+  - [nc_info](#nc_info)
+  - [panel_info](#panel_info)
+  - [Methodology](#methodology)
+  - [To Run as a Snakemake](#to-run-as-a-snakemake)
+- [Tutorial](#tutorial)
+  - [Tutorial for Fred Hutch Servers](#tutorial-for-fred-hutch-servers)
+  - [Tutorial for Non–Fred Hutch Usage (Local or Other HPC)](#tutorial-for-nonfred-hutch-usage-local-or-other-hpc)
+- [Requirements and Installation](#requirements-and-installation)
+  - [Micromamba/Conda Environment](#micromambaconda-environment)
+  - [requirements.txt or environment.yaml Best Practices](#requirementstxt-or-environmentyaml-best-practices)
+- [Contact](#contact)
+- [Acknowledgments](#acknowledgments)
+- [License](#license)
 
 ## Description
 Triton conducts nucleotide-resolution profile analyses for cfDNA samples in BAM format, given a list of individual regions of interest (BED containing,
-for example, promoter regions or gene bodies) or list of composite regions of interest sharing a common center (list of BED files each containing, for
+for example, promoter regions or gene bodies) or a list of composite regions of interest sharing a common center (list of BED files each containing, for
 example, binding locations for a single transcription factor). All fragments in each region/composite region are used to find the fragment size
 distribution, coverage, and probability of a nucleosome center at each point. GC bias correction files from Griffin† are used for GC correction by default,
-though alternative methods are supported. Finally Fast Fourier Transforms are used to isolate well-phased nucleosome derived signal, from which specific features are drawn.
+though alternative methods are supported. Finally, Fast Fourier Transforms are used to isolate well-phased nucleosome-derived signal, from which specific features are drawn.
 
 Updates in Version 3 (v0.3.1):
-* Updated NCDict.pkl used for probable nucleosome center re-weighting of fragment coverage [(see nc_info)](#nc_info)
-* New background panel creation/subtraction modes to account for tumor purity [(see panel_info)](#panel_info)
-* Methylation mode, which accepted Bismarck output files as inputs, has been discontinued (see version 0.2.2)
-* Triton now outputs a fragment end profile instead of the probable nucleosome center profile, which was generally redundant with the phased-nucleosome profile
-* All operations in Triton now use numpy arrays exclusively, leading to an increase in efficiency
-* Updated annotation files for transcription start sites (TSS), transcript bodies, and composite transcription factors [(see inputs)](#inputs-extra-details)
-* Window size for window and composite-window modes now defaults to +/-1000 bp (2000 bp)
-* Bands of coverage without enough overlapping fragments to perform fragmentomics analyses now return 0s as opposed to NaNs
+- Updated `NCDict.pkl` used for probable nucleosome center re-weighting of fragment coverage [(see nc_info)](#nc_info)
+- New background panel creation/subtraction modes to account for tumor purity [(see panel_info)](#panel_info)
+- Methylation mode (0.2.2) has been discontinued
+- Triton now outputs a fragment end profile instead of the probable nucleosome center profile (redundant with the phased-nucleosome profile)
+- All operations in Triton now use NumPy arrays exclusively, leading to an increase in efficiency
+- Updated annotation files for transcription start sites (TSS), transcript bodies, and composite transcription factors [(see inputs)](#inputs-extra-details)
+- Window size for window and composite-window modes now defaults to ±1000 bp (2000 bp total)
+- Bands of coverage without enough overlapping fragments to perform fragmentomics analyses now return 0s instead of NaNs
 
-### Outputs
-
-Triton signal profiles are output as NumPy compressed files (.npz), one for each sample, containing one NumPy array object for each queried
-(individual or composite) site. E.g. if 100 composite site lists are passed with a window size of 2000bp, each output file will contain
-100 named arrays, each with shape 2000x11.
+## Outputs
+Triton signal profiles are output as NumPy compressed files (`.npz`), one for each sample, containing one NumPy array object for each queried
+(individual or composite) site. For example, if 100 composite site lists are passed with a window size of 2000 bp, each output file will contain
+100 named arrays, each with shape `2000×11`.
 
 Nucleotide-resolution profiles include:
 
-    1: Coverage/Depth (GC-corrected)  
-    2: Fragment end coverage/depth
-    3: Phased-nucleosome profile (Fourier-filtered probable nucleosome center profile)  
-    4: Fragment lengths' short:long ratio (x <= 150 / x > 150)  
-    5: Fragment lengths' diversity (unique fragment lengths / total fragments, i.e. multiset support / cardinality)  
-    6: Fragment lengths' Shannon Entropy (normalized to window Shannon Entropy)  
-    7: Peak locations (-1: trough, 1: peak, -2: minus-one peak, 2: plus-one peak, 3: inflection point)***  
-    8: A (Adenine) frequency**  
-    9: C (Cytosine) frequency**  
-    10: G (Guanine) frequency**  
-    11: T (Tyrosine) frequency**  
-  
-Triton region-level features are output as a .tsv file and include:
+1. Coverage/Depth (GC-corrected)  
+2. Fragment end coverage/depth  
+3. Phased-nucleosome profile (Fourier-filtered probable nucleosome center profile)  
+4. Fragment lengths’ short:long ratio (≤150 bp / >150 bp)  
+5. Fragment lengths’ diversity (unique fragment lengths ÷ total fragments)  
+6. Fragment lengths’ Shannon Entropy (normalized to window Shannon Entropy)  
+7. Peak locations (−1: trough, 1: peak, −2: minus-one peak, 2: plus-one peak, 3: inflection point)  
+8. A (Adenine) frequency**  
+9. C (Cytosine) frequency**  
+10. G (Guanine) frequency**  
+11. T (Thymine) frequency**  
 
-    site: annotation name if using composite sites, "name" from BED file for each region otherwise  
-        ### Fragmentation Features (using all fragments in passed range/bounds) ###  
-    fragment-mean: fragment lengths' mean  
-    fragment-stdev: fragment lengths' standard deviation  
-    fragment-median: fragment lengths' median  
-    fragment-mad: fragment lengths' MAD (Median Absolute Deviation)  
-    fragment-ratio: fragment lengths' short:long ratio (x <= 150 / x > 150)  
-    fragment-diversity: fragment lengths' diversity (unique fragment lengths / total fragments, i.e. multiset support / cardinality)  
-    fragment-entropy: fragment lengths' Shannon entropy  
-        ### Phasing Features (FFT-based, using >= 146bp fragments and local peak calling) ###  
-    np-score: Nucleosome Phasing Score (NPS)  
-    np-period: phased-nucleosome period / mean inter-nucleosomal distance  
-    np-amplitude: phased-nucleosome mean amplitude  
-        ### Profiling Features (Filtered signal-based, using >= 146bp fragments and local peak calling) ###  
-    mean-depth: mean depth in the region (GC-corrected, if provided)  
-    var-ratio: ratio of variation in total phased signal (max signal range : max signal height)  
-    plus-one-pos*: location relative to central-loc of plus-one nucleosome  
-    minus-one-pos*: location relative to central-loc of minus-one nucleosome  
-    plus-minus-ratio*: ratio of height of +1 nucleosome to -1 nucleosome  
-    central-loc*: location of central inflection relative to window center (0)  
-    central-depth*: phased signal value at the central-loc (with mean in region set to 1)  
-    central-diversity*: mean fragment diversity value in the +/-5 bp region about the central-loc (with mean in region set to 1)  
+Triton region-level features are output as a `.tsv` file and include:
 
- N.B. that np-amplitude, var-ratio, and fragment diversity measures (fragment-diversity, fragment-ent, and central-diversity) are sensitive to
- sequencing depth and will be increasingly inversely correlated with sample coverage at low depths.
+- **site**: annotation name (if using composite sites) or the `name` from the BED file for each region  
+  - ### Fragmentation Features (using all fragments in passed range/bounds) ###
+    - **fragment-mean**: mean fragment length  
+    - **fragment-stdev**: standard deviation of fragment length  
+    - **fragment-median**: median fragment length  
+    - **fragment-mad**: median absolute deviation of fragment lengths  
+    - **fragment-ratio**: short:long ratio (≤150 / >150)  
+    - **fragment-diversity**: (unique fragment lengths ÷ total fragments)  
+    - **fragment-entropy**: Shannon entropy of fragment lengths  
+  - ### Phasing Features (FFT-based, using ≥146 bp fragments and local peak calling) ###
+    - **np-score**: Nucleosome Phasing Score (NPS)  
+    - **np-period**: phased-nucleosome period / mean inter-nucleosomal distance  
+    - **np-amplitude**: phased-nucleosome mean amplitude  
+  - ### Profiling Features (Filtered signal-based, using ≥146 bp fragments and local peak calling) ###
+    - **mean-depth**: mean depth in the region (GC-corrected, if provided)  
+    - **var-ratio**: ratio of variation in total phased signal (max signal range : max signal height)  
+    - **plus-one-pos***: location relative to `central-loc` of plus-one nucleosome  
+    - **minus-one-pos***: location relative to `central-loc` of minus-one nucleosome  
+    - **plus-minus-ratio***: ratio of the +1 nucleosome height to the −1 nucleosome height  
+    - **central-loc***: location of the central inflection relative to window center (0)  
+    - **central-depth***: phased signal value at the `central-loc` (with mean in region set to 1)  
+    - **central-diversity***: mean fragment diversity within ±5 bp of the `central-loc` (with mean in region set to 1)
 
- When run in composite mode Triton will also output a SkippedSites.bed for each samples, containing individual site
- coordinates for sites skipped due to insufficient or outlier coverage (MAD > 10 in any region). This file will share the format
- of whatever input is provided with additional "reject_reason" and "site_ID" columns. These sites may then be run in individual mode
- (in which case modifications in the "name" column may be required if identical between sites) to examine reason for removal.
-  
-\* these features are only output if a window mode is used, otherwise np.nan is reported  
-\** sequence is based on the reference, not the reads (nt frequency, in composite mode)  
-\*** minus-one, plus-one, and inflection locs are only called if a window mode is used, and supersede peak/trough  
+\* Feature only output in “window” or “composite-window” mode; otherwise `np.nan` is reported.  
+\** Sequence is based on the reference, not the reads (nt frequency, in composite mode).
 
-### Uses
+When run in composite mode, Triton will also output a `SkippedSites.bed` for each sample, containing individual site coordinates for sites skipped due to insufficient or outlier coverage (MAD > 10 in any region). This file will share the format of whatever input is provided, with additional `reject_reason` and `site_ID` columns.
 
+## Uses
 Triton may be used either as an endpoint in cfDNA data analysis by outputting ready-to-use features from a given list of regions or
 composite regions, or as a processing step for further feature extraction from output profiles. Features reported directly from
-Triton can be used in traditional machine learning approaches, specific profiles may be plotted with accompanying scripts for
-qualitative analysis, or profile outputs may be utilized in signal-based analyses and learning structures, e.g. Convolutional Neural Networks (CNNs). 
-Triton features have already been used to distinguish heterogenous cancer lineages via [Keraon](https://github.com/denniepatton/Keraon), and output
-profiles of TSSs in conjunction with features from matched gene bodies are utilized in [Proteus](https://github.com/denniepatton/Proteus) to predict
-individual genes' expression directly from cfDNA (see [publications](#publications)).
+Triton can be used in traditional machine learning approaches, or you can plot specific profiles with accompanying scripts for
+qualitative analysis. You can also employ the output profiles in signal-based analyses or advanced learning frameworks (e.g., CNNs).
 
+Triton features have been used to distinguish heterogeneous cancer lineages via [Keraon](https://github.com/denniepatton/Keraon), and output
+profiles of TSSs in conjunction with features from matched gene bodies are utilized in [Proteus](https://github.com/denniepatton/Proteus) to predict individual genes’ expression directly from cfDNA (see [Publications](#publications)).
 
-### Publications
-
+## Publications
 [Nucleosome Patterns in Circulating Tumor DNA Reveal Transcriptional Regulation of Advanced Prostate Cancer Phenotypes](https://doi.org/10.1158/2159-8290.CD-22-0692)
 
 ## Usage
 
-Triton may be incorporated directly into scripts, or run on a remote cluster using the provided Snakemake(s).
-See below for usage details:
-
 ### Inputs to Triton.py:
 
 ```
--n, --sample_name		: sample identifier (string, required)  
--i, --input			: input .bam file (path, required)  
--b, --bias			: input-matched .GC_bias file (path, e.g. from Griffin†, required)  
--a, --annotation		: regions of interest as a BED file or text file containing a list of BED file paths (required)  
--g, --reference_genome		: reference genome .fa file (path, required)  
--r, --results_dir		: directory for output (path, required)  
--m, --run_mode			: run mode ("region", "window", or "composite-window", string, required)  
--q, --map_quality		: minimum read mapping quality to keep (int, default=20)  
--f, --size_range		: fragment size range in bp to keep (int tuple, default=(15, 500))  
--c, --cpus			: number of CPUs to use for parallel processing of regions (int, optional)  
--d, --frag_dict			: dictionary of probable nucleosome center locations (displacements within fragments) for given fragment  
-				  lengths, as a Python binary .pkl file. Triton ships with a pre-computed dictionary in nc_info/NCDict.pkl,  
-				  which is called by default. See nc_info for details. (optional, default='../nc_info/NCDict.pkl')  
--s, --subtract_background_panel	: path to an annotation-matched background panel for subtraction (string, optional)  
--t, --tumor_fraction		: tumor fraction, required if the -s (--subtract_background_panel) flag is not None (float, optional)  
--p, --generate_panel		: run in background panel generation mode (bool, optional)
+-n, --sample_name               : sample identifier (string, required)
+-i, --input                     : input .bam file (path, required)
+-b, --bias                      : input-matched .GC_bias file (path, e.g., from Griffin†, required)
+-a, --annotation                : regions of interest as a BED file OR text file containing a list of BED file paths (required)
+-g, --reference_genome          : reference genome .fa file (path, required)
+-r, --results_dir               : directory for output (path, required)
+-m, --run_mode                  : run mode ("region", "window", or "composite-window"; string, required)
+-q, --map_quality               : minimum read mapping quality to keep (int, default=20)
+-f, --size_range                : fragment size range in bp to keep (int tuple, default=(15, 500))
+-c, --cpus                      : number of CPUs to use for parallel processing of regions (int, optional)
+-d, --frag_dict                 : dictionary of probable nucleosome center locations (.pkl file). Defaults to nc_info/NCDict.pkl
+-s, --subtract_background_panel : path to an annotation-matched background panel for subtraction (optional)
+-t, --tumor_fraction            : tumor fraction (required if -s is used; float, optional)
+-p, --generate_panel            : run in background panel generation mode (bool, optional)
 ```
 
-### Inputs (extra details):
+### Inputs (extra details)
 
-**input:** input .bam files are assumed to be pre-indexed with matching .bam.bai files in the same directory  
+**input**  
+Input `.bam` files must be pre-indexed with matching `.bam.bai` files in the same directory.
 
-**bias:** sample-matched .GC_bias files can be generated using Griffin's GC correction method
-available at (<https://github.com/GavinHaLab/Griffin>) or using any other method, so long as the format matches.
-Format: tab-separated file with columns "length", "num_GC", and "smoothed_GC_bias" which contains all combinations of
-fragment length / GC content ([0, fragment length]) for a given sample, each with an associated bias.
+**bias**  
+Sample-matched `.GC_bias` files can be generated using Griffin’s GC correction method (https://github.com/GavinHaLab/Griffin) or another tool producing the same format:
+```
+length   num_GC   smoothed_GC_bias
+...
+```
+with all combinations of fragment length / GC content for a given sample and an associated bias.
 
-**annotation:** for individual mode this should be a single [bed-like file](https://www.genome.ucsc.edu/FAQ/FAQformat.html#format1) which contains,
-at minimum, the following columns: [chrom chromStart chromEnd name/Gene]. If strand is provided that will be used to orient all sites in the positive
-direction; otherwise individual regions will be treated as belonging to the + strand, while composite regions will have a strand randomly selected.
-If a window or composite-window mode is used, a "position" column must also be included, which defines the central point for the window.
-When run in composite-window mode, instead of passing a single bed-like file, a text file containing a list of bed-like file locations is needed;
-each individual file is treated as one composite-site, with reads "piled up" across all regions based on stacking fragments in each window.
-Because a defined window is required for composite-window mode, each bed-like file should contain the additional "position" column.  
+**annotation**  
+- In “region” mode, provide a single [BED-like file](https://www.genome.ucsc.edu/FAQ/FAQformat.html#format1) with columns `[chrom, chromStart, chromEnd, name/Gene]`.  
+- In “window” mode, a `[position]` column is required to define the window’s center.  
+- In “composite-window” mode, supply a **text file** containing paths to multiple BED-like files (each with a `[position]` column). Triton will perform a coverage “pileup” across the window for all sites in each BED file.
 
-An example canonical (MANE) transcript body annotation is included in config/site_lists/MANE.GRCh38.v1.3_TranscriptBodies.bed and is suitable for **region** mode.  
+Example canonical annotation files are provided in `config/site_lists`:
+- `MANE.GRCh38.v1.3_TranscriptBodies.bed` for region mode
+- `MANE.GRCh38.v1.3_TSS.bed` for window mode
+- `GTRD_F1000.tsv` or `GTRD_F10000.tsv` for composite-window mode (pointing to directories of BEDs)
 
-An example canonical (MANE) transcription start site annotation is included in config/site_lists/MANE.GRCh38.v1.3_TSS.bed and is suitable for **window** mode.  
+**reference_genome**  
+The `.fa` file must match the build used to align your samples.
 
-Example TFBS-BED file lists are provided in config/site_lists/GTRD_F1000.tsv and config/site_lists/GTRD_F10000.tsv; they link to BEDs in
-config/site_lists/GTRD_F1000 and GTRD_F10000 respectively and contain 1,000 and 10,0000 top sites for 414 TFBSs, garnered from GTRD, filtered,
-and then taken based on highest peak.counts. They are suitable for **composite-window** mode.  
+**run_mode**  
+- “region” mode: analyze the entire region (`chromStart:chromStop`)  
+- “window” mode: analyze ±1000 bp from the `position` index  
+- “composite-window” mode: “pile up” reads from multiple regions around each file’s `position`.
 
-**reference_genome:** reference genome .fa file should match whichever build the samples were aligned to.
+### Contained Scripts
 
-**run_mode:** in "region" mode the full region from chromStart:chromStop is used to derive signals and features, and a BED-like annotation is required;
-in "window" mode a region +/-1000 bp (2000 total) from the "position" index is used to derive signals and features for each site, and a BED-like annotation with a "position" column is required;
-in "composite-window" mode pileup of multiple sites' coverage along a window as defined by "position" in window mode are used to derive signals and features for each set of sites,
-and a file containing a list of BED-like annotation files containing a "position" column is required.
-
-### Contained Scripts:
-
-**Triton.py** | primary script containing the generate_profile() function; takes in inputs and produces outputs  
-**triton_helpers.py** | contains helper functions called by Triton.py  
-**triton_cleanup.py** | combines TritonFeatures.tsv output files produced by Triton when run on multiple samples; called by Snakemake(s)  
-**triton_plotters.py** | plotting utils and functions for TritonProfiles.npz files; use at your own discretion or modify as you see fit!  
-**triton_extractors.py** | extraction utils for producing additional custom features from signal profiles; modify as you see fit!  
-**triton_panel.py** | combines multiple TritonRawPanel.npz files output from Triton.py in panel generation mode (-p) into a single site:panel background collection
-**nc_dist.py** | a modified version of Triton.py for generating composite nucleosome-center profiles; see nc_info  
-**nc_analyze.py** | used after nc_dist.py to create the frag_dict and plot results; see nc_info  
+**Triton.py** – primary script containing the `generate_profile()` function.  
+**triton_helpers.py** – helper functions called by Triton.py.  
+**triton_cleanup.py** – combines `TritonFeatures.tsv` output from multiple samples.  
+**triton_plotters.py** – plotting utilities for `.npz` outputs.  
+**triton_extractors.py** – extraction utilities for additional custom features from signal profiles.  
+**triton_panel.py** – combines multiple TritonRawPanel.npz files into a single site:panel background collection.  
+**nc_dist.py** – a modified script for generating composite nucleosome-center profiles (see [nc_info](#nc_info)).  
+**nc_analyze.py** – used after nc_dist.py to create the frag_dict and plot results (see [nc_info](#nc_info)).
 
 #### triton_plotters.py
+`triton_plotters.py` provides three plotting modes (`--mode / -m`): “RSD”, “all”, and “signal.”  
+- “RSD” plots **R**aw (GC-corrected) coverage, **S**ignal (phased-nucleosome), and fragment **D**iversity.  
+- “all” plots all Triton outputs except nucleotide frequencies.  
+- “signal” plots only the phased-nucleosome signal.  
 
-triton_plotters.py is provided to allow for immediate plotting of TritonProfiles.npz outputs, and includes three plotting modes (--mode / -m):
-
-"RSD" mode (default) plots Raw (GC-corrected) coverage, phased-nucleosome Signal, and fragment Diversity.  
-
-Here is an example of what this looks like for three individual samples across 10,000 composite sites open differentially in ARPC lines, identified through ATAC-seq, with no
-grouping or palette options set (Triton's composite-window mode). LuCaP_136CR is ARPC and shows a clear dip in depth and increase in diversity at the center, unlike LuCaP_145-2 (NEPC) and NPH001 (healthy donor):
-<img src="misc/ATAC_AD-Exclusive_filtered_sig-Profiles_RSD.png">
-
-And here is another example using sample groups, with categories and a palette specified, looking at an individual region (Triton's window mode): the AR promoter centered at the transcription start site (TSS).
-In this example a dip in ARPC lines' coverage is seen just upstream of the TSS, which is not found in NEPC and healthy lines, indicative of active translation.
-<img src="misc/TSS_AR-Profiles_RSD.png">
-
-"all" mode plots all output signals generated by Triton, except for nucleotide frequencies.  
-
-Here is an example of this plotting mode for 1,000 ASCL1 binding sites (TFBSs) run in Triton's composite-window mode. As ASCL1 is active in NEPC lines, but not in ARPC or healthy lines,
-we expect a central dip in coverage with an increase in fragmentation-based signals:
-<img src="misc/TFBS_ASCL1-Profiles_all.png">
-
-Finally, "signal" mode plots only the phased-nucleosome signal, and is useful for visualizing nucleosome depletion.  
-
-triton_plotters.py also features options for grouping samples together (--categories / -c), defining a color palette (--palette / -p),
-signal normalization methods (--normalization / -n), and restricting sites (--sites / -s). It's a good place to start and modification is
-encouraged! Run `Python triton_plotters.py -h` for specific options and input formatting guidance, and checkout misc/example_categories and
-misc/example_palette to ensure categories/palette input files are correctly formatted.
+It also supports grouping samples with `--categories / -c` and color palettes with `--palette / -p`. Run `python triton_plotters.py -h` for details.
 
 #### triton_extractors.py
-
-triton_extractors.py is a bare-bones script designed to help users run their own analysis or feature extraction on TritonProfiles.npz signal outputs.
-Please modify as you see fit!
+`triton_extractors.py` is a simple example script to help extract or transform the `.npz` signal outputs from Triton. Users are encouraged to modify it as needed for custom analyses.
 
 ### nc_info
+Instead of ignoring fragment length when producing nucleosome coverage signals, Triton empirically re-weights coverage according to each fragment’s most probable nucleosome center. This is derived from iNPS peak data across multiple human tissues/cell lines and healthy-donor cfDNA. The resulting matrix, stored as `nc_info/NCDict.pkl`, captures how fragment length maps to nucleosome center placement.
 
-Rather than exclude information about fragment length when producing nucleosome coverage signals, Triton attempts to
-quantify the most probable nucleosome central coverage empirically when creating the "probable nucleosome center profile".
-To this end "stable, tissue-independent" nucleosome positioning was garnered from NucMap (<https://ngdc.cncb.ac.cn/nucmap/>) by
-overlapping 50 human iNPS peak datasets from a variety of tissue types and cell lines (<https://doi.org/10.1038/ncomms5909>)
-against each other, keeping only regions represented in all samples. Triton (as nc_dist.py) was then run on the 186 remaining
-high-confidence sites, using a cohort of healthy donor cfDNA from blood plasma(<https://doi.org/10.1038/s41467-019-12714-4>). The resulting
-nc_info/NCDict.pkl represents a matrix of fragment length vs displacement of fragment center from nucleosome center values, renormalized,
-so that the "weight" of each fragment contributing to the nucleosome center profile is adjusted at each position. The contained NCDict.pkl is
-based on fitting raw counts to a triple-Gaussian: a centered distribution for capturing overlapping single nucleosomes and a symmetric, displaced
-double-Gaussian for capturing dinucleosomes. Raw and fit weight-matrix visualizations, as well as raw and fit signals for specific fragment lengths,
-can be found in nc_info along with the iNPS site list and information regarding the healthy donor samples used.
+If you wish to regenerate `NCDict.pkl` with your own site lists or samples, see `nc_dist.py` and `nc_analyze.py` in `nc_info/`.
 
-In general, the results of this analysis dictate that short fragments (~150-210 bp) generally have centers coinciding with nucleosomes,
-while longer fragments tend to bind nucleosomes asymmetrically nearer to one end or in a pattern indicative of dinucleosomal binding.
-
-If the user would like to re-generate NCDict.pkl with their own site list or samples, please modify nc_dist.py and nc_analyze.py as needed
-and run the snakemake/analysis in nc_info/, overwriting the default NCDict.pkl for future runs.
-
-The BED file used, derived from NucMap, is also available: nc_info/hsNuc_iNPSPeak_bedops-intersect.bed
-
-<img src="misc/NucFragDisplacements_FIT.png">
+<img src="misc/NucFragDisplacements_FIT.png" width="450">
 
 ### panel_info
+Triton supports background panel generation and subtraction to account for tumor purity. Given a sample with an estimated purity/tumor fraction (`-t` / `--tumor_fraction`), Triton will subtract `(1 - tfx) * background_profile` from each site’s coverage, fragment-end coverage, and other signals before processing. 
 
-Triton offers a background panel generation and subtraction method in order to account for tumor purity, on the assumption that the provided
-background samples accurately reflect the coverage and fragmentomic profiles of the non-tumor or background components. For a given sample,
-supplied with an estimated purity or tumor fraction (-tfx), Triton will subtract (1 - tfx) * the background profile for each site's coverage, fragment end coverage,
-fragment length profile, and nt-resolution fragment length profiles before re-scaling and performing downstream fitting and feature extraction.
-
-Background panels exist for the provided gene body, TSS, and TFBSx1000 annotations which were generated using 37 standard WGS from healthy donors;
-please reach out for access, as the files are too large for GitHub. To generate your own background panel, given a set of samples and an annotation of interest,
-base your run on the example provided in panel_info.
-
-To run in background panel subtraction mode, simply select the annotation-matched background panel with "-s" and supply a purity with "-t".
-If using the snakemake, ensure the correct (matching) panel is indicated in config/config.yaml, and that the samples.yaml contains an additional
-"tfx" value for each sample (see config/example_samples_tfx.yaml).
-
-N.B. that in "region" mode Triton will not generate fragmentation-signal background panels, and will not perform fragmentation-signal subtraction.
-However, scalar feature outputs will still undergo background subtraction as expected.
-
-*Panel subtraction mode is a work in progress, and its efficacy has not been fully validated! Feel free to test and contribute. Current testing shows a strong dependence on depth for good efficacy.*
+Precomputed panels exist for gene bodies, TSS, and TFBS-based annotations (not included in this repo due to size). To generate your own, run Triton in panel-generation mode (`-p`) across healthy reference samples and combine the results with `triton_panel.py`.
 
 ### Methodology
+1. Triton retrieves reads from each region (`pysam` for random `.bam` access).  
+2. Reads must be paired, uniquely mapped, not flagged as duplicates, and within the specified fragment length range (default 15–500 bp).  
+3. For coverage arrays, only fragments ≥146 bp are used (approx. fully wrapped nucleosomes).  
+4. Fragment-level GC correction is applied (if bias file is provided).  
+5. If background subtraction is enabled, Triton subtracts `(1 - tfx) * background_profile` for each site.  
+6. Fourier transform filtering isolates the fundamental nucleosome phasing signal (≥146-bp period).  
+7. Local peak calling yields phasing features such as nucleosome spacing and amplitude.  
+8. Fragment length distributions (region-level and per-bp) generate the remaining fragmentomic features.  
 
-Triton first breaks up the provided annotation into equal-sized groups of sites (region/window mode) or equal-sized groups of (sets of)
-sites (composite-window mode), depending on the number of provided cpus. Each group is then run through the generate_profile() routine,
-which returns site or composite-site region-level features and signal arrays, as well as information about any skipped sites when
-run in composite mode. Once all sites have been analyzed for a given sample, output signals and features are reorganized and saved.
+### To Run as a Snakemake
+1. Update the following files to match your system:
+   - `config/config.yaml` – specify inputs (annotation, cluster script path, etc.)
+   - `config/cluster_slurm.yaml` – cluster resource configs
+   - `config/samples.yaml` – sample info; see `example_samples.yaml`
+2. If on a Fred Hutch server, load the Python modules indicated in `Triton.snakefile`.
+3. Validate and then run:
+   ```
+   snakemake -s Triton.snakefile --latency-wait 60 --keep-going \
+   --cluster-config config/cluster_slurm.yaml \
+   --cluster "sbatch -p {cluster.partition} --mem={cluster.mem} -t {cluster.time} -c {cluster.ncpus} -n {cluster.ntasks} -o {cluster.output} -J {cluster.JobName}" \
+   -j 40 -np
+   ```
+   Remove `-np` to actually initiate jobs.
 
-Within generate_profile(), [pysam](https://pysam.readthedocs.io/) is used for fast, random bam access in the region(s) of interest and to
-retrieve reference sequence information from the specified fasta file. All reads overlapping each individual site are processed before
-either joining unnormalized coverages across sites, in the case of composite mode, or passing directly to signal and feature analysis.
-Processing consists of retrieving the site(s) reference sequence, quality control (reads must be paired, meet mapping quality, not be
-duplicate, and fragment lengths must fall in the specified range), GC-correction at the fragment level, and nucleosome
-position re-weighting. For each site the one-hot encoded nucleotide sequence, (GC-corrected) coverage, (GC-corrected) probable nucleosome 
-positioning, site-level fragment length distribution, and positional fragment length distribution (one distribution for fragments overlapping
-each bp) is produced. At this point a purity-weighted background is subtracted, if using Triton with a background panel. These arrays go directly into downstream analysis
-in individual mode, or go through additional site-level quality control in composite mode before being added to the composite total. In
-particular, sites with 0 coverage, 0 median absolute deviation (MAD) in the coverage, or sites with signal > 10 MADs from the median at any point
-are dropped and reported.
+## Tutorial
 
-N.B. that only paired, uniquely mapped reads are used to infer fragments. All fragments specified and in the 15-500bp default bounds are used
-to generate fragment length distributions, and GC-correction is *not* used. All fragment coverage signals *do* use GC-correction, 
-and the lower bound of fragment lengths considered for coverage is 146bp, i.e. the minimum fully wrapped nucleosome coverage.
+### Tutorial for Fred Hutch Servers
+Below is an example workflow if you are on Fred Hutch infrastructure. Load necessary modules (Python or micromamba) and run Triton/Snakemake:
 
-Following initial processing, the probable-nucleosome position signal is run through a Fast Fourier Transform (FFT). The mean frequency
-amplitude in two bands corresponding to "small linker" (150-180bp) and "large linker" (180-210bp) is calculated in order to generate the
-nucleosome phasing score (NPS). A low-pass frequency filter (corresponding to a minimum period of 146bp) is then used when taking the signal
-out of frequency space to isolate the fundamental signal originating from phased-nucleosome length repeats or larger while eliminating
-high-frequency noise or signal originating from poorly phased (deconstructively overlapping) nucleosome pile-ups. This "phased-nucleosome"
-signal is then used for local peak calling, which is in turn used to find the other phasing and profiling features.
+```bash
+# Example environment load on FH systems
+module load Python/3.7.4-foss-2019b-fh1
+# or if using a micromamba/conda approach on FH:
+module load micromamba   # (if available)
 
-For fragment distributions at both the region and bp-level (for overlapping fragment length metric signals) the fragment lengths' mean,
-standard deviation, median, median absolute deviation (MAD), short:long ratio, diversity score, and Shannon (information) entropy are
-calculated directly from the distribution and reported.
+# Clone Triton
+git clone https://github.com/YourUsername/Triton.git
+cd Triton
 
-### TO RUN AS A SNAKEMAKE
+# (Optional) Create environment on Fred Hutch if you have micromamba
+micromamba create -n Triton -f environment.yaml -c conda-forge -c bioconda
+micromamba activate Triton
 
-Ensure the following files are up-to-date for your system and needs (default values for Fred Hutch systems are included)
+# Run Snakemake with HPC specifics
+snakemake -s Triton.snakefile --latency-wait 60 --keep-going \
+--cluster-config config/cluster_slurm.yaml \
+--cluster "sbatch -p {cluster.partition} --mem={cluster.mem} -t {cluster.time} -c {cluster.ncpus}" \
+-j 40
+```
 
-**config/config.yaml**: specify inputs as detailed above, and ensure the annotation and cluster_slurm paths are correct  
-**config/cluster_slurm.yaml**: specify computational resources for your system  
-**config/samples.yaml**: see example_samples.yaml for formatting; also output by default by Griffin GC correction  
+If you prefer a more direct approach without Snakemake, simply call `Triton.py`:
+```bash
+python Triton.py \
+  --sample_name SAMPLE_ID \
+  --input /path/to/sample.bam \
+  --bias /path/to/sample.GC_bias \
+  --annotation config/site_lists/MANE.GRCh38.v1.3_TSS.bed \
+  --reference_genome /path/to/genome.fa \
+  --results_dir results/ \
+  --run_mode window
+```
 
-Ensure the Python environment meets the requirements of Triton; if you are on a Fred Hutch
-server load the modules indicated at the head of Triton.snakefile
+### Tutorial for Non–Fred Hutch Usage (Local or Other HPC)
+1. **Install micromamba** (if you don’t already have it):  
+   See instructions at [https://mamba.readthedocs.io](https://mamba.readthedocs.io). 
+2. **Clone the Triton repository**:
+   ```bash
+   git clone https://github.com/YourUsername/Triton.git
+   cd Triton
+   ```
+3. **Create the environment** (using only `bioconda` and `conda-forge` channels):
+   ```bash
+   micromamba create -n Triton -f environment.yaml -c conda-forge -c bioconda
+   micromamba activate Triton
+   ```
+4. **Local/Single-machine usage**:  
+   You can run `Triton.py` directly from the command line:
+   ```bash
+   python Triton.py \
+     --sample_name SAMPLE_ID \
+     --input /path/to/sample.bam \
+     --bias /path/to/sample.GC_bias \
+     --annotation my_sites.bed \
+     --reference_genome /path/to/genome.fa \
+     --results_dir ./my_results \
+     --run_mode region
+   ```
+5. **HPC usage (non–Fred Hutch)**:  
+   - Configure your job submission scripts or cluster environment (e.g., SLURM, PBS).  
+   - Adjust Snakemake’s cluster directives in the same manner as for Fred Hutch (see above example).  
+   - Submit jobs with your cluster’s submission command, referencing your own cluster configuration.  
 
-Run the following command to validate, then remove "-np" at the end to initiate:  
-`snakemake -s Triton.snakefile --latency-wait 60 --keep-going --cluster-config config/cluster_slurm.yaml --cluster "sbatch -p {cluster.partition} --mem={cluster.mem} -t {cluster.time} -c {cluster.ncpus} -n {cluster.ntasks} -o {cluster.output} -J {cluster.JobName}" -j 40 -np`
+Feel free to adapt the CPU (`--cpus`) or memory usage in your HPC scripts.
 
-## Requirements
+## Requirements and Installation
+Triton requires standard Python libraries (NumPy, SciPy, pysam) and is compatible with Python 3.7+ (tested up to Python 3.10).
 
-On Fred Hutch servers the module Python/3.7.4-foss-2019b-fh1 may be used to run Triton.
-In general, Triton uses standard libraries supported across many versions, i.e. numpy, scipy, and pysam.
-To see a list of requirements used and tested with Python 3.10 through a conda environment, see requirements.txt
+### Micromamba/Conda Environment
+- We recommend distributing a `environment.yaml` (or `environment.yml`) file at the root of your GitHub repository.  
+- Users can then recreate the environment exactly via:
+  ```bash
+  micromamba create -n Triton -f environment.yaml -c conda-forge -c bioconda
+  micromamba activate Triton
+  ```
+- This approach **does not** require an Anaconda license; micromamba is a lightweight, open-source package manager compatible with conda-forge/bioconda.
+
+### requirements.txt or environment.yaml Best Practices
+- **`environment.yaml`**: Allows you to pin exact versions and specify channels (e.g., `bioconda`, `conda-forge`). Anyone can run `micromamba create -n Triton -f environment.yaml` to replicate the environment.
+- **`requirements.txt`**: Often used for pip-based installations. You can include minimal requirements here if some users prefer pip. Note that certain packages (e.g., `pysam`) may install more smoothly via conda channels.  
+- **Repository Integration**: Place `environment.yaml` and/or `requirements.txt` in your root directory. Add a short note in the README pointing to them for quick setup instructions.
 
 ## Contact
-If you have any questions or feedback, please contact me at:  
+If you have any questions or feedback, please contact:
 **Email:** <rpatton@fredhutch.org>
 
 ## Acknowledgments
 Triton is developed and maintained by Robert D. Patton in the Gavin Ha Lab, Fred Hutchinson Cancer Center.  
 Anna-Lisa Doebley provided input and developed the GC-correction process used in Triton, originally found
-in the Griffin (<https://github.com/GavinHaLab/Griffin>) pipeline.
+in the [Griffin](https://github.com/GavinHaLab/Griffin) pipeline.
 
-† Griffin-based GC correction  
+† **Griffin-based GC correction**  
 Triton takes BAM-matched GC bias data produced by the Griffin workflow; the workflow with instructions for generating bias files can be
-found at (<https://github.com/GavinHaLab/Griffin>).
+found at [https://github.com/GavinHaLab/Griffin](https://github.com/GavinHaLab/Griffin).
 
 ## License
-
 The MIT License (MIT)
 
 Copyright (c) 2023 Fred Hutchinson Cancer Center

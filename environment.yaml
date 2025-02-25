@@ -1,0 +1,12 @@
+name: Triton
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.9
+  - numpy
+  - pandas
+  - seaborn
+  - matplotlib
+  - scipy
+  - pysam
