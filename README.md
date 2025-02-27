@@ -18,6 +18,7 @@ _Triton_ is named for the Greek deity who served as messenger of the deep and wo
   - [panel_info](#panel_info)
   - [Methodology](#methodology)
   - [To Run as a Snakemake](#to-run-as-a-snakemake)
+- [Example Profiles](#example-profiles)
 - [Tutorial](#tutorial)
 - [Requirements and Installation](#requirements-and-installation)
 - [Contact](#contact)
@@ -44,7 +45,7 @@ Updates in Version 3 (v0.3.1):
 ## Outputs
 Triton bp-resolution "signal profiles" are output as NumPy compressed files (`.npz`), one for each sample, containing one NumPy array object for each queried
 (individual or composite) site. For example, if 100 composite site lists are passed with a window size of 2000 bp, each output file will contain
-100 named arrays, each with shape `2000×11`.
+100 named arrays, each with shape `2000×11`. Signal profiles are not output for large regions (e.g. full gene bodies) by default.
 
 bp-resolution profiles include:
 
@@ -54,7 +55,8 @@ bp-resolution profiles include:
 4. Fragment lengths’ short:long ratio (≤150 bp / >150 bp)  
 5. Fragment lengths’ diversity (unique fragment lengths ÷ total fragments)  
 6. Fragment lengths’ Shannon Entropy (normalized to window Shannon Entropy)  
-7. Called nucleosome peak locations (−1: trough, 1: peak, −2: minus-one peak, 2: plus-one peak, 3: inflection point)  
+7. Called peaks/troughs in the phased-nucleosome profile  
+   (−1: trough, 1: peak, −2: minus-one peak, 2: plus-one peak, 3: central inflection point)  
 8. A (Adenine) frequency**  
 9. C (Cytosine) frequency**  
 10. G (Guanine) frequency**  
@@ -63,7 +65,7 @@ bp-resolution profiles include:
 Triton region-level features are output as a `.tsv` file and include for each single or composite site:
 
 - **site**: annotation name (if using composite sites) or the `name` from the BED file for the queried region  
-# Fragmentation Features (using all fragment lengths in passed range/bounds)
+Fragmentation Features (using all fragment lengths in passed range/bounds)
 - **fragment-mean**: mean fragment length  
 - **fragment-stdev**: standard deviation of fragment lengths
 - **fragment-median**: median fragment length
@@ -71,11 +73,11 @@ Triton region-level features are output as a `.tsv` file and include for each si
 - **fragment-ratio**: short:long length ratio (≤150 / >150)  
 - **fragment-diversity**: (unique fragment lengths ÷ total fragments)  
 - **fragment-entropy**: Shannon entropy of fragment lengths  
-# Phasing Features (FFT-based, using ≥146 bp fragments and local peak calling)
+Phasing Features (FFT-based, using ≥146 bp fragments and local peak calling)
 - **np-score**: Nucleosome Phasing Score (NPS)  
 - **np-period**: phased-nucleosome period (AKA mean inter-nucleosomal distance) 
 - **np-amplitude**: phased-nucleosome mean amplitude  
-# Profiling Features (Filtered signal-based, using ≥146 bp fragments and local peak calling)
+Profiling Features (Filtered signal-based, using ≥146 bp fragments and local peak calling)
 - **mean-depth**: mean depth in the region (GC-corrected, if provided)  
 - **var-ratio**: ratio of variation in total phased signal (max signal range ÷ max signal height)  
 - **plus-one-pos***: location relative to `central-loc` of plus-one nucleosome  
@@ -181,7 +183,7 @@ Instead of ignoring fragment length when producing nucleosome coverage signals, 
 
 If you wish to regenerate `NCDict.pkl` with your own site lists or samples, see `nc_dist.py` and `nc_analyze.py` in `nc_info/`.
 
-<img src="misc/NucFragDisplacements_FIT.png" width="450">
+<img src="misc/NucFragDisplacements_FIT.png">
 
 ### panel_info
 Triton supports background panel generation and subtraction to account for tumor purity. Given a sample with an estimated purity/tumor fraction (`-t` / `--tumor_fraction`), Triton will subtract `(1 - tfx) * background_profile` from each site’s coverage, fragment-end coverage, and other signals before processing. Preliminary testing has shown mixed results, with depth-saturation a leading concern in robust background subtraction. Playing with this method is only advised if cfDNA and background sequencing have similar, high (>100x) mean depth.
@@ -203,7 +205,8 @@ To generate your own panels, run Triton in panel-generation mode (`-p`) across h
    - `config/config.yaml` – specify inputs (annotation, cluster script path, etc.)
    - `config/cluster_slurm.yaml` – cluster resource configs
    - `config/samples.yaml` – sample info; see `example_samples.yaml`
-2. If on a Fred Hutch server, load the Python modules indicated in the header of `Triton.snakefile`. Otherwise, set-up a local environment following [Requirements and Installation](#requirements-and-installation)
+2. If on a Fred Hutch server, load the Python modules indicated in the header of `Triton.snakefile`  
+Otherwise, set-up a local environment following [Requirements and Installation](#requirements-and-installation)
 3. Run the following snakemake command:
    ```
    snakemake -s Triton.snakefile --latency-wait 60 --keep-going \
@@ -212,6 +215,22 @@ To generate your own panels, run Triton in panel-generation mode (`-p`) across h
    -j 40 -np
    ```
    Removing `-np` to actually initiate jobs following validation.
+
+## Example Profiles
+
+Below are examples of output profiles, plotted using triton_plotters.py, illustrating typical outputs for various settings.
+
+1. The following figure shows three samples, which are ctDNA from a prostate adenocarcinoma PDX model (ARPC: LuCaP_136CR), ctDNA from a neuroendocrine-like prostate cancer PDX model (NEPC: LuCaP_145-1), and healthy donor cfDNA (NPH001). These samples were run through Triton in "composite-window" mode for a list of ~10,000 sites identified through ATAC-Seq as being "open" in ARPC but NEPC. Profiles were plotted at sample-level (`--categories / -c` is not passed) using `--mode RSD`. Note the clean dip in nucleosome coverage seen in the ARPC line which is not reflected in NEPC or healthy. The Phased Nucleosomal Signal also smooths the raw coverage and better resolves nucleosome locations (i.e. in the healthy signal). The Fragment Diversity Index, like other spatial measures of fragment heterogeneity, shows an inverse pattern to coverage with a peak at 0 in the ARPC line, indicative of non-nucleosome associated fragments at that location.
+
+<img src="misc/ATAC_AD-Exclusive_filtered_sig-Profiles_RSD.png">
+
+2. The next figure again looks at PDX ctDNA from ARPC and NEPC lines, along with healthy cfDNA, but for multiple samples in each group. Here Triton was run in "window" mode for all gene TSS regions supplied in `config/site_lists/MANE.GRCh38.v1.3_TSS.bed`; this particular example is for the gene AR's promoter region. Profiles were plotted at categorical-level (using `--categories / -c`) showing the 95% confidence interval along with `--mode RSD`. This gene is expected to be active only in ARPC lines; note the canonical dip in the ARPC group slightly upstream of the 0-point along with an increase in the stability of the +1 nucleosome in the top two profiles, which is associated with active transcription. These samples are ~30x mean coverage, making fragmentation signals quite noisy in single regions.
+
+<img src="misc/TSS_AR-Profiles_RSD.png">
+
+3. Finally, let's look at the same groups as in 2 but once again using "composite-window" mode; this time Triton was run with TFBS composite sites (`config/site_lists/GTRD_F1000.tsv`) containing 1,000 high-confidence sites per transcription factor. Profiles were plotted at categorical-level (using `--categories / -c`) showing the 95% confidence interval along with `--mode all`, so that all Triton output signals (exlcuding reference nt frequencies and peak locations) are shown. This transcription factor, ASCL1, is active in NEPC lines but not ARPC or healthy; this is clear in the Depth and Nucleosomal Signal profiles which show a dip in coverage at overlapping ASCL1 binding sites, indicating nucleosome clearance and active binding. Fragmentation signals also show an increase in fragment heterogeneity at binding sites for NEPC samples, indicating potential ASCL1 or other non-nucleosomal protection. Fragment End Coverage similarly shows increased alignment at the +/-1 nucleosome locations relative to binding sites for NEPC samples, which may indicate a reduction in fragments spanning the binding domain.
+
+<img src="misc/TFBS_ASCL1-Profiles_all.png">
 
 ## Tutorial
 
@@ -223,7 +242,8 @@ Below is an example workflow if you are on Fred Hutch infrastructure. Load neces
 git clone https://github.com/denniepatton/Triton.git
 cd Triton
 
-# Example environment load on FH systems
+# Example module loads on FH systems
+ml snakemake/5.19.2-foss-2019b-Python-3.7.4
 ml Python/3.7.4-foss-2019b-fh1
 
 # Run Snakemake with HPC specifics
