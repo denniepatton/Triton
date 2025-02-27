@@ -65,7 +65,7 @@ bp-resolution profiles include:
 Triton region-level features are output as a `.tsv` file and include for each single or composite site:
 
 - **site**: annotation name (if using composite sites) or the `name` from the BED file for the queried region  
-Fragmentation Features (using all fragment lengths in passed range/bounds)
+#### Fragmentation Features (using all fragment lengths in passed range/bounds)
 - **fragment-mean**: mean fragment length  
 - **fragment-stdev**: standard deviation of fragment lengths
 - **fragment-median**: median fragment length
@@ -73,11 +73,11 @@ Fragmentation Features (using all fragment lengths in passed range/bounds)
 - **fragment-ratio**: short:long length ratio (≤150 / >150)  
 - **fragment-diversity**: (unique fragment lengths ÷ total fragments)  
 - **fragment-entropy**: Shannon entropy of fragment lengths  
-Phasing Features (FFT-based, using ≥146 bp fragments and local peak calling)
+#### Phasing Features (FFT-based, using ≥146 bp fragments and local peak calling)
 - **np-score**: Nucleosome Phasing Score (NPS)  
 - **np-period**: phased-nucleosome period (AKA mean inter-nucleosomal distance) 
 - **np-amplitude**: phased-nucleosome mean amplitude  
-Profiling Features (Filtered signal-based, using ≥146 bp fragments and local peak calling)
+#### Profiling Features (Filtered signal-based, using ≥146 bp fragments and local peak calling)
 - **mean-depth**: mean depth in the region (GC-corrected, if provided)  
 - **var-ratio**: ratio of variation in total phased signal (max signal range ÷ max signal height)  
 - **plus-one-pos***: location relative to `central-loc` of plus-one nucleosome  
@@ -125,7 +125,7 @@ profiles and features of TSSs in conjunction with features from matched gene bod
 -p, --generate_panel            : run in background panel generation mode (bool, optional)
 ```
 
-### (extra details)
+#### (extra details)
 
 **input**  
 Input `.bam` (or `.cram`) files must be pre-indexed with matching `.bam.bai` (`.cram.crai`) files in the same directory.
@@ -218,9 +218,9 @@ Otherwise, set-up a local environment following [Requirements and Installation](
 
 ## Example Profiles
 
-Below are examples of output profiles, plotted using triton_plotters.py, illustrating typical outputs for various settings.
+Below are examples of output profiles, plotted using triton_plotters.py, illustrating typical outputs for different combinations of Triton and plotting settings.
 
-1. The following figure shows three samples, which are ctDNA from a prostate adenocarcinoma PDX model (ARPC: LuCaP_136CR), ctDNA from a neuroendocrine-like prostate cancer PDX model (NEPC: LuCaP_145-1), and healthy donor cfDNA (NPH001). These samples were run through Triton in "composite-window" mode for a list of ~10,000 sites identified through ATAC-Seq as being "open" in ARPC but NEPC. Profiles were plotted at sample-level (`--categories / -c` is not passed) using `--mode RSD`. Note the clean dip in nucleosome coverage seen in the ARPC line which is not reflected in NEPC or healthy. The Phased Nucleosomal Signal also smooths the raw coverage and better resolves nucleosome locations (i.e. in the healthy signal). The Fragment Diversity Index, like other spatial measures of fragment heterogeneity, shows an inverse pattern to coverage with a peak at 0 in the ARPC line, indicative of non-nucleosome associated fragments at that location.
+1. The following figure shows three samples, which are ctDNA from a prostate adenocarcinoma PDX model (ARPC: LuCaP_136CR), ctDNA from a neuroendocrine-like prostate cancer PDX model (NEPC: LuCaP_145-1), and healthy donor cfDNA (NPH001). These samples were run through Triton in "composite-window" mode for a list of ~10,000 sites identified through ATAC-Seq as being "open" in ARPC but not NEPC. Profiles were plotted at sample-level (`--categories / -c` is not passed) using `--mode RSD`. Note the clean dip in nucleosome coverage seen in the ARPC line which is not reflected in NEPC or healthy. The Phased Nucleosomal Signal also smooths the raw coverage and better resolves nucleosome locations (i.e. in the healthy signal). The Fragment Diversity Index, like other spatial measures of fragment heterogeneity, shows an inverse pattern to coverage with a peak at 0 in the ARPC line, indicative of non-nucleosome associated fragments at that location.
 
 <img src="misc/ATAC_AD-Exclusive_filtered_sig-Profiles_RSD.png">
 
