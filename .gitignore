@@ -1,13 +1,3 @@
-# local
-panel_info/GTRD_F1000_BackgroundPanel.npz
-panel_info/MANE.GRCh38.v1.3_TranscriptBodies_BackgroundPanel.npz
-panel_info/MANE.GRCh38.v1.3_TSS_BackgroundPanel.npz
-panel_gb/
-panel_tss/
-panel_info/results/*.npz
-panel_info/logs/cluster/*.out
-
-# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class

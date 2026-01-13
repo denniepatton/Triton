@@ -1,0 +1,40 @@
+# Directories
+.git/
+.gitignore
+results/
+logs/
+work/
+.nextflow/
+.nextflow.log*
+.DS_Store
+
+# Snakemake specific
+.snakemake/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+
+# Documentation and misc
+*.md
+!README.md
+misc/
+plotting/
+
+# Large data files
+*.bam
+*.bam.bai
+*.npz
+*.tsv
+*.bed
+*.fa
+*.fasta
+*.fai
+
+# Config files (will be mounted at runtime)
+config/samples.yaml
+config/cluster_slurm.yaml

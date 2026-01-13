@@ -1,0 +1,61 @@
+samples:
+  BP1124302:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124302_S86.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124302_S86.GC_bias.txt
+  BP1124304:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124304_S83.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124304_S83.GC_bias.txt
+  BP1124576:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124576_S78.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124576_S78.GC_bias.txt
+  BP1124582:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124582_S79.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124582_S79.GC_bias.txt
+  BP1124584:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124584_S80.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124584_S80.GC_bias.txt
+  BP1124589:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124589_S81.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124589_S81.GC_bias.txt
+  BP1124591:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124591_S82.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124591_S82.GC_bias.txt
+  BP1124690:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124690_S84.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124690_S84.GC_bias.txt
+  BP1124698:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124698_S87.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124698_S87.GC_bias.txt
+  BP1124705:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-L_DL/BP1124705_S85.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HDL_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/BP1124705_S85.GC_bias.txt
+  KP63704:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP63704_2plasma/KP63704_2plasma.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP63704.GC_bias.txt
+  KP63705:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP63705_2plasma/KP63705_2plasma.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP63705.GC_bias.txt
+  KP63706:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP63706_2plasma/KP63706_2plasma.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP63706.GC_bias.txt
+  KP63707:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP63707_2plasma/KP63707_2plasma.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP63707.GC_bias.txt
+  KP65194:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP65194_1034/KP65194_1034.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP65194.GC_bias.txt
+  KP65195:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP65195_1023/KP65195_1023.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP65195.GC_bias.txt
+  KP65197:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP65197_1022/KP65197_1022.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP65197.GC_bias.txt
+  KP65198:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP65198_1028/KP65198_1028.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP65198.GC_bias.txt
+  KP65225:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP65225_1035/KP65225_1035.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP65225.GC_bias.txt
+  KP65231:
+    bam: /hpc/temp/ha_g/user/rpatton/HD-U_DL/KP65231_1058/KP65231_1058.cram
+    GC_bias: /fh/fast/ha_g/user/rpatton/HD_data/GC-Correction/results/repeat_masker.mapable.k50.Umap.hg38/GC_bias/KP65231.GC_bias.txt

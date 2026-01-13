@@ -1,7 +1,7 @@
 # cluster_slurm.yaml for Triton.snakefile, for use on Fred Hutch servers
 # (modfiy to fit your own needs if using snakemake in another setting)
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
-# v1.0
+# v2.0
 
 __default__:
     partition: campus-new

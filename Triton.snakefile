@@ -1,6 +1,6 @@
 # Triton.snakefile
 # Robert Patton, rpatton@fredhutch.org (Ha Lab)
-# v0.3.1, 04/23/2024
+# v2.0, 09/16/2025
 
 """
 # before running snakemake at Fred Hutch, do in tmux terminal:
@@ -24,8 +24,9 @@ rule triton_main:
         bam_path = lambda wildcards: config["samples"][wildcards.samples]['bam'],
         bias_path = lambda wildcards: config["samples"][wildcards.samples]['GC_bias']
     output:
-        fm_file = (config['results_dir']+"/{samples}_TritonFeatures.tsv"),
-        signal_file = (config['results_dir']+"/{samples}_TritonProfiles.npz")
+        fm_file = (config['results_dir']+"/{samples}/{samples}_TritonFeatures.tsv"),
+        signals_file = (config['results_dir']+"/{samples}/{samples}_TritonSignalProfiles.npz"),
+        fragments_file = (config['results_dir']+"/{samples}/{samples}_TritonFragmentationProfiles.npz")
     params:
         sample_name = "{samples}",
         annotation = config['annotation'],
@@ -35,8 +36,6 @@ rule triton_main:
         size_range=config['size_range'],
         cpus = config['triton_main']['ncpus'],
         run_mode = config['run_mode'],
-        bg_panel = config['bg_panel'],
-        tumor_fraction = lambda wildcards: '--tumor_fraction ' + str(config["samples"][wildcards.samples]['tfx']) if 'tfx' in config["samples"][wildcards.samples] else ''
     shell:
         """
         python Triton/Triton.py \
@@ -49,14 +48,12 @@ rule triton_main:
             --map_quality {params.map_quality} \
             --size_range {params.size_range} \
             --cpus {params.cpus} \
-            --run_mode {params.run_mode} \
-            --subtract_background_panel {params.bg_panel} \
-            {params.tumor_fraction}
+            --run_mode {params.run_mode}
         """
 
 rule combine_fms:
     input:
-        fm_files = expand("{results_dir}/{samples}_TritonFeatures.tsv", results_dir=config['results_dir'], samples=config['samples'].keys())
+        fm_files = expand("{results_dir}/{samples}/{samples}_TritonFeatures.tsv", results_dir=config['results_dir'], samples=config['samples'].keys())
     output:
         final = "{results_dir}/TritonCompositeFM.tsv".format(results_dir=config['results_dir'])
     params:

@@ -1,11 +1,16 @@
 # Robert Patton, rpatton@fredhutch.org
-# v1.0.0, 03/06/2024
+# v2.0.1, 10/14/2025
 
 import numpy as np
 import pandas as pd
 
-oh_mapping = {chr(i): 0 for i in range(65, 91)}  # all uppercase letters are 0 except for ACGT
-oh_mapping.update(dict(zip("ACGT", range(1, 5))))  # sequence mapping for one-hot encoding nucleotides
+# Pre-compute a mapping array for faster lookup
+mapping_array = np.zeros(91, dtype=np.uint8)  # ASCII 'Z' is 90
+mapping_array[65:91] = 0  # A-Z default to 0
+mapping_array[ord('A')] = 1
+mapping_array[ord('C')] = 2
+mapping_array[ord('G')] = 3
+mapping_array[ord('T')] = 4
 
 
 def str2int(v):
@@ -21,25 +26,19 @@ def str2int(v):
 
 def get_index(header, names, default, message):
     for name in names:
-        if name in header:
+        try:
             return header.index(name)
-    if default is not None:
-        print(message.format(default, header[default]))
-    else:
-        print(message.format(default, 'N/A'))
+        except ValueError:
+            continue
+    print(message.format(default, header[default] if default is not None else 'N/A'))
     return default
 
 
 def one_hot_encode(seq):
-    """
-    One-hot encode a nucleotide sequence (as a binary numpy array)
-        Parameters:
-            seq (string): string of nucleotides to one-hot encode
-        Returns:
-            numpy array: one-hot encoded nucleotide sequence of size 5xN
-    """
-    oh_seq = [oh_mapping[nt] for nt in seq]
-    return np.eye(5, dtype=int)[oh_seq]
+    """One-hot encode a nucleotide sequence"""
+    # Convert sequence to ASCII codes and map
+    indices = np.frombuffer(seq.encode(), dtype=np.uint8)
+    return np.eye(5, dtype=np.int8)[mapping_array[indices]]
 
 
 def get_gc_bias_dict(bias_path):
@@ -54,211 +53,198 @@ def get_gc_bias_dict(bias_path):
             dict: GC bias in dictionary form (returns bias given [length][gc content]
     """
     bias = pd.read_csv(bias_path, sep='\t')
-    bias['smoothed_GC_bias'] = bias['smoothed_GC_bias'].where(bias['smoothed_GC_bias'] >= 0.05, np.nan)
-    bias = bias[['length', 'num_GC', 'smoothed_GC_bias']]
-    bias = bias.set_index(['num_GC', 'length']).unstack().to_dict()
-    bias_dict = {key[1]: {num_GC: bias[key][num_GC] for num_GC in range(0, key[1] + 1)} for key in bias.keys()}
+    # Apply filtering directly
+    bias.loc[bias['smoothed_GC_bias'] < 0.10, 'smoothed_GC_bias'] = np.nan
+    bias.loc[bias['smoothed_GC_bias'] > 10.0, 'smoothed_GC_bias'] = np.nan
+    
+    # Create dictionary directly
+    bias_dict = {}
+    for _, row in bias[['length', 'num_GC', 'smoothed_GC_bias']].iterrows():
+        length, gc, bias_val = int(row['length']), int(row['num_GC']), row['smoothed_GC_bias']
+        if length not in bias_dict:
+            bias_dict[length] = {}
+        bias_dict[length][gc] = bias_val
+    
     return bias_dict
 
 
-def frag_metrics(frag_lengths, reduce=False):
+def frag_metrics(frag_prob_dist, reduce=False, bins=None):
     """
-    Returns various metrics of fragment lengths given an input of fragment length counts.
+    Returns various metrics of fragment lengths given a probability distribution.
     
     Parameters:
-        frag_lengths (np.array): 1D array of fragment length counts, where the index is the fragment length - 1 (1 indexed)
-        reduce (bool): if true, only output ratio, diversity, and entropy (save time on signal profiles)
+        frag_prob_dist (np.array): 1D array of fragment length probabilities (sums to 1.0), where index is fragment length - 1 (1-indexed)
+        reduce (bool): if true, only output ratio, entropy, and Gini-Simpson index (save time on signal profiles)
+        bins (list/tuple): Pre-computed bins as (bin_start_indices, num_bins). Used only for entropy/Gini-Simpson calculation.
     
     Returns:
         Tuple containing:
-            - mean (float)
-            - stdev (float)
-            - median (float)
-            - mad (float)
-            - ratio (float)
-            - diversity (float)
-            - entropy (float)
+            - mean (float) - computed on 1-bp resolution
+            - stdev (float) - computed on 1-bp resolution
+            - skew (float) - computed on 1-bp resolution
+            - kurtosis (float) - computed on 1-bp resolution
+            - ratio (float) - computed on 1-bp resolution
+            - entropy (float) - computed on binned data
+            - gini_simpson (float) - computed on binned data
     """
-    total_count = np.sum(frag_lengths)
-    unique_count = np.count_nonzero(frag_lengths)
-    frag_lengths_long = np.sum(frag_lengths[150:])
+    # Calculate effective sample size: n_eff = 1 / sum(p_i^2)
+    # This accounts for the information content in the probability distribution
+    sum_p_squared = np.sum(frag_prob_dist ** 2)
+    n_eff = 1.0 / sum_p_squared if sum_p_squared > 0 else 0
+    if n_eff < 5:  # Minimum effective sample size for reliable metrics
+        return (np.nan,) * (3 if reduce else 7)
+
+    # Subnucleosomal ratio: computed on 1-bp resolution (threshold at 147 bp)
+    frag_short = np.sum(frag_prob_dist[:146])
+    frag_long = np.sum(frag_prob_dist[146:])
+    ratio = np.nan if frag_long == 0 else frag_short / frag_long
     
-    if total_count < 2 or unique_count < 2 or frag_lengths_long == 0:  # BARE MINIMUM to get real metrics
-        return (0.0,) * (3 if reduce else 7)
-
-    ratio = np.sum(frag_lengths[:151]) / frag_lengths_long
-    diversity = unique_count / total_count
-    entropy = shannon_entropy(frag_lengths)
-
+    # Diversity metrics - always computed on binned data for smoothing
+    entropy, gini_simpson = diversity_metrics(frag_prob_dist, bins=bins)
+    
+    # For reduce mode, skip moment calculations
     if reduce:
-        return ratio, diversity, entropy
+        return ratio, entropy, gini_simpson
 
-    # Calculate mean and standard deviation
-    indices = np.arange(len(frag_lengths)) + 1
-    mean = np.average(indices, weights=frag_lengths)
-    stdev = np.sqrt(np.average((indices - mean) ** 2, weights=frag_lengths))
+    # Statistical moments - computed on 1-bp resolution for accurate distribution representation
+    indices = np.arange(1, len(frag_prob_dist) + 1)
+    weights = frag_prob_dist
+    
+    # Mean (in bp units)
+    mean = np.average(indices, weights=weights)
+    
+    # Variance and standard deviation (in bp units)
+    delta = indices - mean
+    variance = np.average(delta**2, weights=weights)
+    stdev = np.sqrt(variance)
+    
+    # Higher moments (skewness and kurtosis)
+    if stdev > 1e-10:
+        skew = np.average(delta**3, weights=weights) / (stdev**3)
+        kurtosis = np.average(delta**4, weights=weights) / (stdev**4) - 3  # Excess kurtosis
+    else:
+        skew, kurtosis = 0.0, 0.0
 
-    # Calculate median
-    cumulative_counts = np.cumsum(frag_lengths)
-    median = np.searchsorted(cumulative_counts, total_count / 2) + 1
-
-    # Calculate MAD (Median Absolute Deviation)
-    deviations = np.abs(indices - median)
-    sorted_indices = np.argsort(deviations)
-    sorted_deviations = deviations[sorted_indices]
-    sorted_counts = frag_lengths[sorted_indices]
-    cumulative_counts = np.cumsum(sorted_counts)
-    median_index = np.searchsorted(cumulative_counts, total_count / 2)
-    mad = sorted_deviations[median_index]
-
-    return mean, stdev, median, mad, ratio, diversity, entropy
+    return mean, stdev, skew, kurtosis, ratio, entropy, gini_simpson
 
 
-def shannon_entropy(counts):
+def diversity_metrics(prob_dist, bins=None):
     """
-    Returns the max-normalized Shannon Entropy of a set of values.
+    Returns the max-normalized Shannon Entropy and Gini-Simpson index (1 - sum(p_i^2)) for binned probability distribution (5bp bins)
         Parameters:
-            counts (list/array): 1D array of fragment length counts, where the index is the fragment length -1 (1 indexed).
+            prob_dist (list/array): 1D array of fragment length probabilities (sums to 1.0), where index is fragment length -1 (1-indexed).
+            bins (list/tuple): Pre-computed bins as (bin_start_indices, num_bins). If None, bins will be computed.
         Returns:
-            float: Max-normalized Shannon Entropy.
+            tuple: (float: Max-normalized Shannon Entropy, float: Gini-Simpson index (max-normalized))
     """
-    pdist = counts / np.sum(counts)
-    pdist = pdist[pdist > 0]
-    entropy = -np.sum(pdist * np.log2(pdist))
-    return entropy / np.log2(len(counts))
+    # If bins are not provided, compute them
+    if bins is None:
+        bin_size = 5
+        prob_dist_len = len(prob_dist)
+        num_bins = int(np.ceil(prob_dist_len / bin_size))
+        
+        # Early exit for empty or single bin
+        if prob_dist_len == 0 or num_bins <= 1:
+            return np.nan, np.nan
+            
+        # Faster binning using reshape and sum
+        # Handle case where prob_dist is not evenly divisible by bin_size
+        if prob_dist_len % bin_size != 0:
+            # Pad the array with zeros to make it evenly divisible
+            padding_size = bin_size - (prob_dist_len % bin_size)
+            padded_prob = np.pad(prob_dist, (0, padding_size), 'constant')
+            reshaped = padded_prob.reshape(-1, bin_size)
+        else:
+            reshaped = prob_dist.reshape(-1, bin_size)
+        
+        binned_probs = np.sum(reshaped, axis=1)
+        
+        # Remove empty bin from padding if it exists
+        if prob_dist_len % bin_size != 0:
+            binned_probs = binned_probs[:num_bins]
+    else:
+        # Use pre-computed bins
+        bin_edges, num_bins = bins
+        
+        # Early exit for empty or single bin
+        if len(prob_dist) == 0 or num_bins <= 1:
+            return np.nan, np.nan
+            
+        # Compute binned probabilities using the provided bin edges
+        binned_probs = np.zeros(num_bins)
+        for i in range(num_bins):
+            start_idx = bin_edges[i]
+            end_idx = bin_edges[i+1] if i < num_bins-1 else len(prob_dist)
+            binned_probs[i] = np.sum(prob_dist[start_idx:end_idx])
+    
+    # binned_probs should already sum to ~1.0 since prob_dist sums to 1.0
+    # But use it directly without re-normalization to preserve the probability mass
+    total = np.sum(binned_probs)
+    if total <= 0:
+        return np.nan, np.nan
+        
+    # Ensure normalization for numerical stability
+    pdist = binned_probs / total if total > 0 else binned_probs
+    
+    # Gini-Simpson calculation (vectorized)
+    gs_index = 1.0 - np.sum(pdist * pdist)
+    max_gs = 1.0 - 1.0/num_bins
+    gs_index = gs_index / max_gs if max_gs > 0 else np.nan
+    
+    # Entropy calculation - vectorized with masked operations
+    mask = pdist > 0
+    entropy = 0.0
+    if np.any(mask):
+        # Use masked array for cleaner calculation
+        p_nonzero = pdist[mask]
+        log2_p = np.log2(p_nonzero)
+        entropy = -np.sum(p_nonzero * log2_p) / np.log2(num_bins)
+    
+    return entropy, gs_index
 
 
-def local_peaks(ys, xs):
+def local_peaks(ys):
     """
     Finds LOCAL (min or max relative to neighbors) peaks given a 1D array; only appropriate for very smooth data
     (E.G. an inverse fourier transform with high frequencies removed)
         Parameters:
             ys (np.array): signal height
-            xs (np.array): raw height (for insuring non-zero maxima)
         Returns:
             max_values: np.array of maxima values
             max_indices: np.array of corresponding maxima indices
             min_values: np.array of minima values
             min_indices: np.array of corresponding minima indices
     """
-    # Calculate differences between consecutive elements
+    # Check for edge cases
+    n = len(ys)
+    if n <= 2:
+        # Not enough points for peaks - return empty arrays
+        # We don't return np.nan here because these are arrays that may be used for indexing later
+        return np.array([]), np.array([], dtype=int), np.array([]), np.array([], dtype=int)
+    
+    # Use NumPy's diff function for efficiency
     diff = np.diff(ys)
-    # Find indices where the difference changes sign
-    sign_changes = np.where(np.diff(np.sign(diff)))[0] + 1
-    # Separate into maxima and minima
-    max_indices = sign_changes[np.where(diff[sign_changes - 1] > 0)]
-    min_indices = sign_changes[np.where(diff[sign_changes - 1] < 0)]
-    # Filter maxima to ensure non-zero maxima
-    max_indices = max_indices[xs[max_indices] > 0]
-
-    return ys[max_indices], max_indices, ys[min_indices], min_indices
-
-
-def nearest_peaks(ref_point, ref_list):
-    """
-    Finds the nearest upstream/downstream peak to a given index/point
-        Parameters:
-            ref_point (int): point of interest
-            ref_list (np.array): list of peak indices
-        Returns:
-            left_index: index of nearest upstream peak
-            right_index: index of nearest downstream peak
-    """
-    distances = ref_point - ref_list
-    positive_distances = distances[distances > 0]
-    left_index = ref_point - positive_distances.min() if positive_distances.size else np.nan
-    negative_distances = np.abs(distances[distances < 0])
-    right_index = ref_point + negative_distances.min() if negative_distances.size else np.nan
-
-    return left_index, right_index
-
-def subtract_background(frag_lengths, frag_lengths_prof, frag_ends_profile, depth, nc_signal, site_dict, tfx, window):
-    """
-    Subtracts background from a site's fragment length profile
-        Parameters:
-            frag_lengths (np.array): 1D array of fragment length counts, where the index is the fragment length
-            frag_length_prof (np.array): 2D array of shape (501, window) where each column represents fragment_lengths at that position
-            frag_end_profile (np.array): 1D array of fragment end counts
-            depth (np.array): 1D array of read counts
-            nc_signal (np.array): 1D array of nucleosomal signal
-            site_dict (dict): dictionary of site-specific background values
-                Contained are 'fragment_lengths', 'fragment_length_profile', 'fragment_end_profile', and 'depth' which have been
-                normalized to sum to 1 (lengths- histogram-wise, and nc_signal) or to have mean of 1 (depth). This is because we want
-                to scale histograms and nc_signal to have the same total *number of reads* as background when subtracting, but for depth,
-                which does not have area proportional to number of reads (due to variable fragment lengths), we want to scale to have the
-                same mean depth which is more reflective of how the signals scale.
-            tfx (float): TFX value for site (sample)
-            window (int): window size for signal profiles, or None if in region mode
-        Returns:
-            frag_lengths: np.array of fragment length counts
-            frag_length_prof: np.array of fragment length profile
-            frag_end_profile: np.array of fragment end counts
-            depth: np.array of read counts
-            nc_signal: np.array of nucleosomal signal
-    """
-    # Get background values for site
-    frag_lengths_bg = site_dict['fragment_lengths']
-    frag_lengths_prof_bg = site_dict['fragment_length_profile']
-    frag_ends_profile_bg = site_dict['fragment_end_profile']
-    depth_bg = site_dict['depth']
-    nc_signal_bg = site_dict['nc_signal']
-
-    # Subtract background from fragment length counts
-    frag_lengths_counts = frag_lengths.sum()
-    frag_lengths_norm = frag_lengths / frag_lengths_counts
-    frag_lengths_sub_norm = np.maximum((frag_lengths_norm - (1 - tfx) * frag_lengths_bg) / tfx, 0)
-    frag_lengths_sub_norm /= frag_lengths_sub_norm.sum()  # re-normalize
-    frag_lengths_sub = np.round(frag_lengths_sub_norm * frag_lengths_counts)  # re-scale to original counts
-
-    if frag_lengths_prof_bg is not None:
-        # Subtract background from fragment length profile
-        frag_lengths_prof_counts = np.sum(frag_lengths_prof, axis=0)
-        frag_lengths_prof_norm = frag_lengths_prof / frag_lengths_prof_counts
-        frag_lengths_prof_sub_norm = np.maximum((frag_lengths_prof_norm - (1 - tfx) * frag_lengths_prof_bg) / tfx, 0)
-        frag_lengths_prof_sub_norm /= frag_lengths_prof_sub_norm.sum(axis=0)  # re-normalize
-        frag_lengths_prof_sub = np.round(frag_lengths_prof_sub_norm * frag_lengths_prof_counts)  # re-scale to original counts
-    else:
-        # Skip, as this was run in region mode
-        frag_lengths_prof_sub = frag_lengths_prof
-
-    if frag_ends_profile_bg is not None:
-        # Subtract background from fragment end profile
-        frag_ends_profile_counts = np.sum(frag_ends_profile, axis=0)
-        frag_ends_profile_norm = frag_ends_profile / frag_ends_profile_counts
-        frag_ends_profile_sub_norm = np.maximum((frag_ends_profile_norm - (1 - tfx) * frag_ends_profile_bg) / tfx, 0)
-        frag_ends_profile_sub_norm /= frag_ends_profile_sub_norm.sum(axis=0)  # re-normalize
-        frag_ends_profile_sub = np.round(frag_ends_profile_sub_norm * frag_ends_profile_counts)  # re-scale to original counts
-    else:
-        # Skip, as this was run in region mode
-        frag_ends_profile_sub = frag_ends_profile
-
-    def process_signal(signal, background, tfx):
-        """ N.B. I am attempting to subtract the background from the signal in a way that preserves both the signal's shape
-        and the signal's mean. This is done by scaling the signal and the background to have the same (flanking) mean, and and also
-        shifting the background constant to keep the ratio of variation, in terms of MAD from mean, similar before and after."""
-        if window is not None:
-            # Scale ignoring the central 500 bp
-            half = len(signal) // 2
-            mean_signal = np.mean(np.concatenate((signal[:half-250], signal[half+250:])))
-            mean_bg = np.mean(np.concatenate((background[:half-250], background[half+250:])))
-        else:
-            mean_signal = np.mean(signal)
-            mean_bg = np.mean(background)
-        # Scale the signal and the background to have the same (flanking) mean
-        signal_scaled = signal / mean_signal
-        background_scaled = background / mean_bg
-        # Subtract the scaled background from the scaled signal
-        signal_sub = signal_scaled - (1 - tfx) * background_scaled
-        # Add a constant to avoid negative values, if they occur
-        if np.any(signal_sub < 0):
-            signal_sub -= np.min(signal_sub)
-        # Re-scale the signal to have the same mean as original signal
-        signal_sub = signal_sub * mean_signal / np.mean(signal_sub)
-        return signal_sub
-
-    # Apply the function to depth and nc_signal
-    depth_sub = process_signal(depth, depth_bg, tfx)
-    nc_signal_sub = process_signal(nc_signal, nc_signal_bg, tfx)
-
-    return frag_lengths_sub, frag_lengths_prof_sub, frag_ends_profile_sub, depth_sub, nc_signal_sub
+    
+    # Find where derivative changes sign - doing this in one step
+    # This pre-allocates the result arrays for better performance
+    sign_changes_mask = np.empty(len(diff)-1, dtype=bool)
+    np.not_equal(np.sign(diff[:-1]), np.sign(diff[1:]), out=sign_changes_mask)
+    sign_changes = np.nonzero(sign_changes_mask)[0] + 1
+    
+    if len(sign_changes) == 0:
+        # No sign changes means no peaks
+        return np.array([]), np.array([], dtype=int), np.array([]), np.array([], dtype=int)
+    
+    # Calculate the directions once
+    directions = diff[sign_changes-1] > 0
+    
+    # Get maxima and minima using boolean masking
+    max_indices = sign_changes[directions]
+    min_indices = sign_changes[~directions]
+    
+    # Get the values from original array
+    max_values = ys[max_indices]
+    min_values = ys[min_indices]
+    
+    return max_values, max_indices, min_values, min_indices
 

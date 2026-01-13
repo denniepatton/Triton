@@ -8,6 +8,7 @@ import os
 import sys
 import pysam
 import argparse
+import numpy as np
 from triton_helpers import *
 
 chr_idx, start_idx, stop_idx, pos_idx = 0, 1, 2, 6  # default BED indices
@@ -39,9 +40,9 @@ def generate_profile(params):
         for read in site_reads:
             if not read.is_read1: continue  # only consider read 1 to avoid double counting fragments
             fragment_length = read.template_length
-            abs_length = abs(fragment_length)
+            abs_fragment_length = abs(fragment_length)
             # fragment QC filtering
-            if frag_range[0] <= abs_length <= frag_range[1] and read.is_paired and \
+            if frag_range[0] <= abs_fragment_length <= frag_range[1] and read.is_paired and \
                     read.mapping_quality >= map_q and not read.is_duplicate and not read.is_qcfail:
                 read_start = read.reference_start
                 if read.is_reverse and fragment_length < 0:  # read1 is reverse
@@ -53,11 +54,14 @@ def generate_profile(params):
                     fragment_end = read_start + fragment_length
                 else: continue  # read2 is upstream of read1, likely an artifact or SV
                 # fill the center displacement array
-                print(fragment_start, center_pos, fragment_end)
-                if fragment_start <= center_pos <= fragment_end or fragment_start >= center_pos >= fragment_end:
+                # print(fragment_start, center_pos, fragment_end)
+                if fragment_start <= center_pos <= fragment_end:
                     frag_center = fragment_start + int((fragment_end - fragment_start) / 2)
                     center_disp = center_pos - frag_center
-                    frag_cents[500 - np.abs(fragment_length), 500 - center_disp] += 1
+                    
+                    # Add bounds checking to prevent array index errors
+                    if abs_fragment_length <= 500 and abs(center_disp) <= 500:
+                        frag_cents[500 - abs_fragment_length, 500 - center_disp] += 1
 
     return frag_cents
 
