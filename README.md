@@ -244,13 +244,13 @@ The `.fa` file must match the build used to align your samples.
 
 ### Contained Scripts
 
-**Triton/Triton.py** – primary script containing the `generate_profile()` function
-**Triton/triton_helpers.py** – helper functions called by Triton.py
-**Triton/triton_cleanup.py** – combines `TritonFeatures.tsv` output from multiple samples
-**Triton/triton_plotters.py** – plotting utilities for `.npz` outputs
-**Triton/triton_extractors.py** – extraction utilities for pulling additional, custom features from signal profiles
-**Triton/nc_dist.py** – a modified script for generating composite nucleosome-center profiles (see [nc_info](#nc_info))
-**Triton/nc_analyze.py** – used after nc_dist.py to create the frag_dict and plot results (see [nc_info](#nc_info))
+- **Triton/Triton.py** – primary script containing the `generate_profile()` function
+- **Triton/triton_helpers.py** – helper functions called by Triton.py
+- **Triton/triton_cleanup.py** – combines `TritonFeatures.tsv` output from multiple samples
+- **Triton/triton_plotters.py** – plotting utilities for `.npz` outputs
+- **Triton/triton_extractors.py** – extraction utilities for pulling additional, custom features from signal profiles
+- **Triton/nc_dist.py** – a modified script for generating composite nucleosome-center profiles (see [nc_info](#nc_info))
+- **Triton/nc_analyze.py** – used after nc_dist.py to create the frag_dict and plot results (see [nc_info](#nc_info))
 
 #### triton_plotters.py
 `triton_plotters.py` plots Triton `.npz` output profiles into multi-panel PDF figures (one PDF per site).
