@@ -25,6 +25,7 @@ N.B. the numpy array ordering of profile objects:
 import os
 import argparse
 import warnings
+import glob
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -376,166 +377,67 @@ def plot_profiles(name, data, region, fragmentation_data, samples, palette=None,
     # Collect fragment data by category
     frag_data_by_category = {}
     
-    for sample_idx, (sample, frag_data) in enumerate(zip(samples, fragmentation_data)):
-        if frag_data is None:
-            print(f"No fragmentation data for {sample}")
+    for sample_idx, (sample, frag_item) in enumerate(zip(samples, fragmentation_data)):
+        if frag_item is None:
+            # optional input
             continue
-        
-        # Skip if sample not in categories (consistent with signal plotting logic)
-        if categories is not None and sample not in categories:
-            continue
-            
-        # Access the fragment_profiles data (new format only)
-        if 'fragment_data' in frag_data.files and 'fragment_columns' in frag_data.files:
-            fragment_data = frag_data['fragment_data']
-            fragment_columns = frag_data['fragment_columns']
-            
-            # Reconstruct DataFrame from saved data and columns
-            df = pd.DataFrame(fragment_data, columns=fragment_columns)
-            
-            # Find the matching site
-            if 'site' in df.columns:
-                site_match = df[df['site'] == name]
-                if not site_match.empty:
-                    # Extract fragment length data (exclude the 'site' column)
-                    frag_cols = [col for col in df.columns if col.startswith('frag_len_')]
-                    site_frag_data = site_match[frag_cols].iloc[0].values
-                else:
-                    # Try using the first available site as fallback
-                    if len(df) > 0:
-                        frag_cols = [col for col in df.columns if col.startswith('frag_len_')]
-                        site_frag_data = df[frag_cols].iloc[0].values
-                    else:
-                        continue
-            else:
+
+        # Support either an already-open NpzFile or a file path.
+        # For large sample sets we prefer file paths to avoid exhausting OS file descriptors.
+        if isinstance(frag_item, str):
+            if not os.path.exists(frag_item):
                 continue
-            
-            # Data is already float32 from Triton.py, convert to float64 for processing
-            site_frag_data = site_frag_data.astype(np.float64)
-            
-            # Diagnostic: Check for shape mismatch
-            if len(site_frag_data) != len(frag_lengths):
-                print(f"ERROR: Shape mismatch for sample '{sample}' at site '{name}'")
-                print(f"  site_frag_data shape: {site_frag_data.shape}, length: {len(site_frag_data)}")
-                print(f"  frag_lengths shape: {frag_lengths.shape}, length: {len(frag_lengths)}")
-                print(f"  frag_cols found: {len(frag_cols)}")
-                print(f"  frag_cols: {frag_cols[:5]}..." if len(frag_cols) > 5 else f"  frag_cols: {frag_cols}")
-                continue  # Skip this sample to avoid crash
-            
-            # Validate fragment data before processing
-            # Skip samples with all NaNs, all zeros, or other invalid data
-            if np.all(np.isnan(site_frag_data)) or np.all(site_frag_data == 0) or len(site_frag_data) == 0:
-                print(f"Skipping sample '{sample}' at site '{name}': fragment data is all NaN, zero, or empty")
-                continue
-            
-            # Check for too many NaNs (more than 50% of data points)
-            nan_fraction = np.isnan(site_frag_data).sum() / len(site_frag_data)
-            if nan_fraction > 0.5:
-                print(f"Skipping sample '{sample}' at site '{name}': fragment data has {nan_fraction:.1%} NaN values")
-                continue
-            
-            # Normalize to true density (area under curve = 1)
-            # Use trapezoidal rule for integration approximation
-            # Handle NaNs by using only valid data points for area calculation
-            valid_mask = ~np.isnan(site_frag_data)
-            if np.any(valid_mask):
-                area = trapezoid(site_frag_data[valid_mask], frag_lengths[valid_mask])
-            else:
-                area = 0
-                
-            if area <= 0:
-                print(f"Skipping sample '{sample}' at site '{name}': fragment data has zero or negative area under curve")
-                continue
-                
-            # Normalize the data
-            site_frag_data = site_frag_data / area
-            
-            # Additional validation after normalization
-            if np.all(np.isnan(site_frag_data)) or not np.isfinite(site_frag_data).any():
-                print(f"Skipping sample '{sample}' at site '{name}': fragment data invalid after normalization")
-                continue
-            
-            # Get sample group label and collect data by category
-            sample_group = categories.get(sample, sample) if categories else sample
-            
-            if sample_group not in frag_data_by_category:
-                frag_data_by_category[sample_group] = []
-            
-            # Smooth the data before collecting (handle NaNs in smoothing)
-            # Replace any remaining NaNs with zeros for smoothing
-            data_for_smoothing = np.where(np.isnan(site_frag_data), 0, site_frag_data)
-            smoothed_data = gaussian_filter1d(data_for_smoothing, sigma=3)
-            
-            # Final validation of smoothed data
-            if np.all(np.isnan(smoothed_data)) or not np.isfinite(smoothed_data).any():
-                print(f"Skipping sample '{sample}' at site '{name}': fragment data invalid after smoothing")
-                continue
-                
-            frag_data_by_category[sample_group].append(smoothed_data)
-    
+            with np.load(frag_item, allow_pickle=True) as frag_data:
+                _collect_fragment_data(
+                    ax_frag=ax_frag,
+                    name=name,
+                    frag_data=frag_data,
+                    sample=sample,
+                    categories=categories,
+                    palette=palette,
+                    frag_lengths=frag_lengths,
+                    frag_data_by_category=frag_data_by_category,
+                )
+        else:
+            frag_data = frag_item
+            _collect_fragment_data(
+                ax_frag=ax_frag,
+                name=name,
+                frag_data=frag_data,
+                sample=sample,
+                categories=categories,
+                palette=palette,
+                frag_lengths=frag_lengths,
+                frag_data_by_category=frag_data_by_category,
+            )
+
     # Plot fragment data by category
     for sample_group, group_data in frag_data_by_category.items():
-        # Skip categories with no valid data
-        if not group_data or len(group_data) == 0:
-            print(f"Skipping category '{sample_group}': no valid fragment data samples")
-            continue
-            
         sample_color = palette.get(sample_group) if palette else None
+        
+        # (moved into helper)
         
         if categories is not None and len(group_data) > 1:
             # Plot 95% CI band for categories with multiple samples
-            try:
-                group_array = np.array(group_data)
-                
-                # Additional validation: check if any samples in the group have all NaNs
-                valid_samples = []
-                for i, sample_data in enumerate(group_data):
-                    if not np.all(np.isnan(sample_data)) and np.isfinite(sample_data).any():
-                        valid_samples.append(sample_data)
-                
-                if len(valid_samples) == 0:
-                    print(f"Skipping category '{sample_group}': all samples have invalid fragment data")
-                    continue
-                elif len(valid_samples) < len(group_data):
-                    print(f"Category '{sample_group}': using {len(valid_samples)}/{len(group_data)} valid samples")
-                    group_array = np.array(valid_samples)
-                
-                means = np.mean(group_array, axis=0)
-                stds = np.std(group_array, axis=0)
-                n = len(valid_samples)
-                
-                # Validate means and stds
-                if np.all(np.isnan(means)) or not np.isfinite(means).any():
-                    print(f"Skipping category '{sample_group}': computed means are invalid")
-                    continue
-                
-                # Calculate 95% CI
-                sems = stds / np.sqrt(n)
-                ci_lower = means - 1.96 * sems  # Approximate 95% CI
-                ci_upper = means + 1.96 * sems
-                
-                # Plot mean line and CI band
-                ax_frag.plot(frag_lengths, means, label=f'{sample_group}', alpha=0.8, 
-                            color=sample_color, linewidth=2)
-                ax_frag.fill_between(frag_lengths, ci_lower, ci_upper, alpha=0.2, color=sample_color)
-                
-            except Exception as e:
-                print(f"Error plotting category '{sample_group}': {e}")
-                continue
+            group_array = np.array(group_data)
+            means = np.mean(group_array, axis=0)
+            stds = np.std(group_array, axis=0)
+            n = len(group_data)
+            
+            # Calculate 95% CI
+            sems = stds / np.sqrt(n)
+            ci_lower = means - 1.96 * sems  # Approximate 95% CI
+            ci_upper = means + 1.96 * sems
+            
+            # Plot mean line and CI band
+            ax_frag.plot(frag_lengths, means, label=f'{sample_group}', alpha=0.8, 
+                        color=sample_color, linewidth=2)
+            ax_frag.fill_between(frag_lengths, ci_lower, ci_upper, alpha=0.2, color=sample_color)
         else:
-            # Plot individual sample (original behavior) - but validate each sample
-            plotted_any = False
+            # Plot individual sample (original behavior)
             for data in group_data:
-                # Validate individual sample data
-                if np.all(np.isnan(data)) or not np.isfinite(data).any():
-                    continue
-                    
                 ax_frag.plot(frag_lengths, data, label=f'{sample_group}', alpha=0.8, 
                            color=sample_color, linewidth=1.5)
-                plotted_any = True
-            
-            if not plotted_any:
-                print(f"Skipping sample/category '{sample_group}': no valid fragment data to plot")
     
     ax_frag.set_xlabel('Fragment Length (bp)', fontsize=10)
     ax_frag.set_ylabel('Density', fontsize=10)
@@ -549,6 +451,62 @@ def plot_profiles(name, data, region, fragmentation_data, samples, palette=None,
     return
 
 
+def _collect_fragment_data(
+    *,
+    ax_frag,
+    name,
+    frag_data,
+    sample,
+    categories,
+    palette,
+    frag_lengths,
+    frag_data_by_category,
+):
+    # Skip if sample not in categories (consistent with signal plotting logic)
+    if categories is not None and sample not in categories:
+        return
+
+    # Access the fragment_profiles data (new format only)
+    if 'fragment_data' not in frag_data.files or 'fragment_columns' not in frag_data.files:
+        return
+
+    fragment_data = frag_data['fragment_data']
+    fragment_columns = frag_data['fragment_columns']
+
+    # Reconstruct DataFrame from saved data and columns
+    df = pd.DataFrame(fragment_data, columns=fragment_columns)
+
+    if 'site' not in df.columns:
+        return
+
+    site_match = df[df['site'] == name]
+    if not site_match.empty:
+        frag_cols = [col for col in df.columns if col.startswith('frag_len_')]
+        site_frag_data = site_match[frag_cols].iloc[0].values
+    else:
+        # Fallback to first available site
+        if len(df) == 0:
+            return
+        frag_cols = [col for col in df.columns if col.startswith('frag_len_')]
+        site_frag_data = df[frag_cols].iloc[0].values
+
+    site_frag_data = site_frag_data.astype(np.float64)
+    if len(site_frag_data) != len(frag_lengths):
+        print(f"ERROR: Shape mismatch for sample '{sample}' at site '{name}'")
+        return
+
+    area = trapezoid(site_frag_data, frag_lengths)
+    if area > 0:
+        site_frag_data = site_frag_data / area
+
+    sample_group = categories.get(sample, sample) if categories else sample
+    if sample_group not in frag_data_by_category:
+        frag_data_by_category[sample_group] = []
+
+    smoothed_data = gaussian_filter1d(site_frag_data, sigma=3)
+    frag_data_by_category[sample_group].append(smoothed_data)
+
+
 def load_file_data(file_path, delimiter='\t', header=None):
     """
     Helper function to load data from files
@@ -556,6 +514,92 @@ def load_file_data(file_path, delimiter='\t', header=None):
     if file_path:
         return pd.read_table(file_path, sep=delimiter, header=header).set_index(0).to_dict()[1]
     return None
+
+
+def _expand_inputs(input_args):
+    """Expand globs and normalize inputs into a flat list of existing paths."""
+    expanded = []
+    for item in input_args:
+        if any(ch in item for ch in ['*', '?', '[', ']']):
+            matches = glob.glob(item)
+            if matches:
+                expanded.extend(matches)
+            else:
+                expanded.append(item)
+        else:
+            expanded.append(item)
+    return expanded
+
+
+def _discover_samples(input_args):
+    """Return list of sample records from input paths.
+
+    Accepts either:
+    - explicit sample directories (each containing <sample>_TritonSignalProfiles.npz)
+    - a root results directory (containing per-sample subdirectories)
+    """
+    sample_records = []
+    seen_signal_paths = set()
+
+    for path in _expand_inputs(input_args):
+        if not os.path.isdir(path):
+            continue
+
+        path = path.rstrip('/')
+        base = os.path.basename(path)
+        direct_signal = os.path.join(path, f'{base}_TritonSignalProfiles.npz')
+
+        if os.path.exists(direct_signal):
+            signal_path = direct_signal
+            sample_name = base
+            frag_path = os.path.join(path, f'{sample_name}_TritonFragmentationProfiles.npz')
+            if signal_path not in seen_signal_paths:
+                sample_records.append({
+                    'sample': sample_name,
+                    'dir': path,
+                    'signal': signal_path,
+                    'frag': frag_path if os.path.exists(frag_path) else None,
+                })
+                seen_signal_paths.add(signal_path)
+            continue
+
+        # Otherwise treat as a root directory: look one level down for sample dirs.
+        try:
+            children = [os.path.join(path, d) for d in os.listdir(path)]
+        except OSError:
+            continue
+
+        for child in sorted(children):
+            if not os.path.isdir(child):
+                continue
+            child_base = os.path.basename(child.rstrip('/'))
+
+            # Prefer the conventional naming if present.
+            child_signal = os.path.join(child, f'{child_base}_TritonSignalProfiles.npz')
+            if os.path.exists(child_signal):
+                sample_name = child_base
+                signal_path = child_signal
+            else:
+                # Otherwise, accept any *_TritonSignalProfiles.npz in the child dir.
+                matches = glob.glob(os.path.join(child, '*_TritonSignalProfiles.npz'))
+                if not matches:
+                    continue
+                signal_path = matches[0]
+                sample_name = os.path.basename(signal_path).removesuffix('_TritonSignalProfiles.npz')
+
+            frag_path = os.path.join(child, f'{sample_name}_TritonFragmentationProfiles.npz')
+
+            if signal_path in seen_signal_paths:
+                continue
+            sample_records.append({
+                'sample': sample_name,
+                'dir': child,
+                'signal': signal_path,
+                'frag': frag_path if os.path.exists(frag_path) else None,
+            })
+            seen_signal_paths.add(signal_path)
+
+    return sample_records
 
 
 def main():
@@ -593,138 +637,85 @@ def main():
     palette = load_file_data(args.palette)
     sites = open(args.sites).read().splitlines() if args.sites else None
 
-    # Extract sample names from input directories and load data
-    samples = []
-    tests_data = []
-    fragmentation_data = []
-    
-    for directory in args.input:
-        if not os.path.isdir(directory):
-            # print(f'Warning: {directory} is not a directory. Skipping.')
-            continue
-            
-        sample_name = os.path.basename(directory.rstrip('/'))
-        signal_file = os.path.join(directory, f'{sample_name}_TritonSignalProfiles.npz')
-        fragmentation_file = os.path.join(directory, f'{sample_name}_TritonFragmentationProfiles.npz')
-        
-        # Check for required signal file
-        if not os.path.exists(signal_file):
-            print(f'Warning: Missing {sample_name}_TritonSignalProfiles.npz in directory {directory}. Skipping.')
-            continue
-            
-        # Check for fragmentation file (warn but don't skip)
-        if not os.path.exists(fragmentation_file):
-            print(f'Warning: Missing {sample_name}_TritonFragmentationProfiles.npz in directory {directory}.')
-            fragmentation_data.append(None)
-        else:
-            fragmentation_data.append(np.load(fragmentation_file, allow_pickle=True))
-        
-        # Load signal data and add to lists
-        samples.append(sample_name)
-        tests_data.append(np.load(signal_file))
-
-    # Check if we have any valid samples
-    if not samples:
+    # Discover samples from inputs (accept either sample dirs or a root results/ dir)
+    sample_records = _discover_samples(args.input)
+    if not sample_records:
         print('Error: No valid samples found. Please check your input directories.')
         quit()
 
-    print(f'Loaded {len(samples)} samples: {", ".join(samples)}')
-
     # Filter samples by categories and show warnings once
     if categories is not None:
-        filtered_samples = []
-        filtered_tests_data = []
-        filtered_fragmentation_data = []
-        
-        for i, sample in enumerate(samples):
-            if sample not in categories:
-                print(f'Sample {sample} not found in categories. Skipping.')
+        filtered = []
+        for rec in sample_records:
+            if rec['sample'] not in categories:
+                print(f"Sample {rec['sample']} not found in categories. Skipping.")
             else:
-                filtered_samples.append(sample)
-                filtered_tests_data.append(tests_data[i])
-                filtered_fragmentation_data.append(fragmentation_data[i])
-        
-        samples = filtered_samples
-        tests_data = filtered_tests_data
-        fragmentation_data = filtered_fragmentation_data
-        
-        if not samples:
+                filtered.append(rec)
+        sample_records = filtered
+        if not sample_records:
             print('Error: No valid samples remain after category filtering.')
             quit()
-        
-        print(f'Using {len(samples)} samples after category filtering: {", ".join(samples)}')
 
-    # Process each site
-    for site in tests_data[0].files:
-        if sites is None or site in sites:
-            print(f'*** Processing samples for {site}')
-            
-            # Process each sample for the current site
-            dfs = []
-            for sample, test_data in zip(samples, tests_data):
-                # Skip if no data
-                
-                if pd.isnull(test_data[site]).all():
-                    print(f'No data for {site} for sample {sample}. Skipping.')
+    samples = [rec['sample'] for rec in sample_records]
+    fragmentation_data = [rec['frag'] for rec in sample_records]  # paths (or None)
+
+    print(f'Loaded {len(samples)} samples: {", ".join(samples[:20])}' + (' ...' if len(samples) > 20 else ''))
+
+    # Determine sites to iterate (from the first sample's signal npz)
+    with np.load(sample_records[0]['signal'], allow_pickle=True) as first_npz:
+        available_sites = list(first_npz.files)
+
+
+    # Process each site (streaming per site, opening/closing per-sample npz to avoid FD exhaustion)
+    for site in available_sites:
+        if sites is not None and site not in sites:
+            continue
+
+        print(f'*** Processing samples for {site}')
+
+        dfs = []
+        for rec in sample_records:
+            sample = rec['sample']
+            signal_path = rec['signal']
+
+            with np.load(signal_path, allow_pickle=True) as test_data:
+                if site not in test_data.files:
                     continue
-                    
-                # Debug fragment orientation data
-                if site in test_data:
-                    data_array = test_data[site]
-                    if data_array.shape[0] > 2:  # Ensure we have the fragment orientation row (index 2)
-                        frag_orient_data = data_array[2]
-                        nan_count = np.isnan(frag_orient_data).sum()
-                        total_count = len(frag_orient_data)
-                        if nan_count == total_count:
-                            print(f"Warning: All fragment orientation data for {site} in sample {sample} is NaN")
-                        # elif nan_count > 0:
-                        #     print(f"Info: Fragment orientation for {site} in sample {sample} has {nan_count}/{total_count} NaN values")
-                
-                # Process data if it's in the right shape
-                if len(test_data[site].shape) == 2:
-                    # Create a DataFrame for the sample - use only first 8 channels (discard nucleotide frequencies if present)
-                    data_array = test_data[site]
-                    original_channels = data_array.shape[0]
-                    
-                    # Take only the first 8 rows (channels) to match our expected cols
-                    data_to_use = data_array[:8, :] if data_array.shape[0] >= 8 else data_array
-                    channels_used = data_to_use.shape[0]
-                    
-                    # if original_channels > 8:
-                    #     print(f"Info: Using first {channels_used} of {original_channels} channels for {site} (discarding nucleotide frequencies)")
-                    
-                    tdf = pd.DataFrame(data_to_use.T, columns=cols[:channels_used])
-                    tdf['loc'] = np.arange(len(tdf))
-                    if not args.region_axis:
-                        tdf['loc'] -= len(tdf) / 2
-                    tdf['sample'] = sample
-                    tdf['label'] = categories.get(sample, sample) if categories else sample
-                    dfs.append(tdf)
-            
-            # Skip if no data to plot
-            if not dfs:
-                print(f'No data for {site}. Skipping.')
-                continue
-                
-            # Combine all sample data
-            df = pd.concat(dfs) if len(dfs) > 1 else dfs[0]
-            print(f'*** Plotting {site}')
-            
-            # Verify we have data to plot if using categories
-            if categories:
-                df = df[df['label'].notna()]
-                if len(df['label'].unique()) < 1:
-                    print(f'No samples to plot after matching against the provided categories file. Please ensure '
-                        f'provided labels are an exact match! Categories provided: {categories.keys()}')
-                    print(f'Sample names provided: {samples}')
-                    print('Exiting.')
-                    quit()
-            
-            # Transform to long format for plotting
-            df_melted = pd.melt(df, id_vars=['sample', 'loc', 'label'], value_vars=cols, var_name='profile')
-            
-            # Plot the data
-            plot_profiles(site, df_melted, args.region_axis, fragmentation_data, samples, palette=palette, categories=categories)
+
+                data_array = test_data[site]
+                if pd.isnull(data_array).all():
+                    continue
+
+                if len(data_array.shape) != 2:
+                    continue
+
+                # Create a DataFrame for the sample - use only first 8 channels
+                data_to_use = data_array[:8, :] if data_array.shape[0] >= 8 else data_array
+                channels_used = data_to_use.shape[0]
+
+                tdf = pd.DataFrame(data_to_use.T, columns=cols[:channels_used])
+                tdf['loc'] = np.arange(len(tdf))
+                if not args.region_axis:
+                    tdf['loc'] -= len(tdf) / 2
+                tdf['sample'] = sample
+                tdf['label'] = categories.get(sample, sample) if categories else sample
+                dfs.append(tdf)
+
+        if not dfs:
+            print(f'No data for {site}. Skipping.')
+            continue
+
+        df = pd.concat(dfs) if len(dfs) > 1 else dfs[0]
+        print(f'*** Plotting {site}')
+
+        if categories:
+            df = df[df['label'].notna()]
+            if len(df['label'].unique()) < 1:
+                print('No samples to plot after matching against the provided categories file. Exiting.')
+                quit()
+
+        df_melted = pd.melt(df, id_vars=['sample', 'loc', 'label'], value_vars=cols, var_name='profile')
+        plot_profiles(site, df_melted, args.region_axis, fragmentation_data, samples, palette=palette, categories=categories)
 
 if __name__ == "__main__":
     main()
