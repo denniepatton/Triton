@@ -1,18 +1,14 @@
 # Triton <img src="misc/logo_v2.png" width="140" align="left">
 
-As a cell-free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic and phased-nucleosome coverage analyses on individual or
-composite genomic regions and outputs both region-level biomarkers and nucleotide-resolution signal profiles.
+As a cell-free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic and phased-nucleosome coverage analyses on individual or composite genomic regions and outputs both region-level biomarkers and nucleotide-resolution signal profiles.
 
-_Triton_ is named for the Greek deity who served as messenger of the deep and would blow a conch shell to calm or raise the waves. Like Triton, this tool has the power to see beyond the waves and carry messages from the deep.
-
-<br/>
+_Triton_ is named for the Greek deity who served as messenger of the deep and would blow a conch shell to calm or raise the waves. Like Triton, this tool has the power to see beyond the waves.
 
 ## Table of Contents
 - [Description](#description)
-- [What's New in v2.0](#whats-new-in-v20)
+- [What's New in v2.0.0](#whats-new-in-v200)
 - [Outputs](#outputs)
 - [Feature Details and Interpretation](#feature-details-and-interpretation)
-- [Uses](#uses)
 - [Publications](#publications)
 - [Usage](#usage)
   - [Inputs to Triton.py](#inputs-to-tritonpy)
@@ -29,17 +25,15 @@ _Triton_ is named for the Greek deity who served as messenger of the deep and wo
 - [License](#license)
 
 ## Description
-Triton conducts bp-resolution profile analyses for cfDNA samples in BAM or CRAM format, given a list of individual regions of interest (BED file containing,
-for example, promoter regions or gene bodies) or a list of composite regions of interest sharing a common center (list of BED files each containing, for
-example, binding locations for a single transcription factor). All fragments in each region/composite region are used to find the fragment size
-distribution, coverage, and probability of a nucleosome center at each point. GC bias correction files from Griffin† are used for GC correction by default,
-though alternative methods are supported. Finally, Fast Fourier Transforms are used to isolate well-phased nucleosome-originating signal, from which nucleosome positioning features are drawn.
+Triton conducts bp-resolution profile analyses for cfDNA samples in BAM or CRAM format, given a list of individual regions of interest (BED file containing, for example, promoter regions or gene bodies) or a list of composite regions of interest sharing a common center (list of BED files each containing, for example, binding locations for a single transcription factor). All fragments in each region/composite region are used to find the fragment size distribution, coverage, and probability of a nucleosome center at each point. GC bias correction files from Griffin† are used for GC correction by default, though alternative methods are supported. Finally, Fast Fourier Transforms are used to isolate well-phased nucleosome-originating signal, from which nucleosome positioning features are drawn.
+
+Outputs may be used either as an endpoint in cfDNA data analysis by outputting ready-to-use features from a given list of regions or composite regions, or as a processing step for further feature extraction from output profiles. Features reported directly from Triton can be used in traditional machine learning approaches, or specific profiles can be plotted with accompanying scripts for qualitative analysis. Signal profiles may also be used in signal-based analyses or in deep learning frameworks (e.g., CNNs).
 
 Triton is part of _The Pantheon_ suite of cfDNA processing and analysis tools. While Triton is useful on its own for characterizing the cfDNA-inferred epigenetic landscape in regions of interest, outputs from Triton may also be used by [Proteus](https://github.com/denniepatton/Proteus) in order to predict the underlying tumor expression of individual genes, and by [Keraon](https://github.com/denniepatton/Keraon) in order to predict tumor subtypes and their proportions.
 
 <img src="misc/Pantheon.png">
 
-## What's New in v2.0
+## What's New in v2.0.0
 
 Version 2.0.0 represents a major release with significant improvements to processing and biological interpretability:
 
@@ -193,15 +187,6 @@ Triton's features capture distinct aspects of chromatin biology:
 ### Cohort-Level Analyses
 
 **Important Note**: When performing comparisons across samples or patients within a cohort, it is strongly recommended to apply **site-level z-scoring** to normalize for technical variation and batch effects. This standardization ensures that biological differences, rather than sequencing depth or sample-specific biases, drive downstream analyses and model predictions.
-
-## Uses
-Triton may be used either as an endpoint in cfDNA data analysis by outputting ready-to-use features from a given list of regions or
-composite regions, or as a processing step for further feature extraction from output profiles. Features reported directly from
-Triton can be used in traditional machine learning approaches, or specific profiles can be plotted with accompanying scripts for
-qualitative analysis. Output signal profiles may also be used in signal-based analyses or in deep learning frameworks (e.g., CNNs).
-
-Triton features have been used to distinguish heterogeneous cancer lineages using [Keraon](https://github.com/denniepatton/Keraon), and output
-profiles and features of TSSs in conjunction with features from matched gene bodies are utilized in [Proteus](https://github.com/denniepatton/Proteus) to predict individual genes' expression directly from cfDNA (see [Publications](#publications)).
 
 ## Publications
 [Nucleosome Patterns in Circulating Tumor DNA Reveal Transcriptional Regulation of Advanced Prostate Cancer Phenotypes](https://doi.org/10.1158/2159-8290.CD-22-0692)
