@@ -53,9 +53,9 @@ def get_gc_bias_dict(bias_path):
             dict: GC bias in dictionary form (returns bias given [length][gc content]
     """
     bias = pd.read_csv(bias_path, sep='\t')
-    # Apply filtering directly
-    bias.loc[bias['smoothed_GC_bias'] < 0.10, 'smoothed_GC_bias'] = np.nan
-    bias.loc[bias['smoothed_GC_bias'] > 10.0, 'smoothed_GC_bias'] = np.nan
+    # Apply filtering directly; clipped to reasonable bounds
+    bias.loc[bias['smoothed_GC_bias'] < 0.10, 'smoothed_GC_bias'] = 0.10
+    bias.loc[bias['smoothed_GC_bias'] > 10.0, 'smoothed_GC_bias'] = 10.0
     
     # Create dictionary directly
     bias_dict = {}

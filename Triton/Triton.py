@@ -47,6 +47,12 @@ def process_fragments_fast(site_reads, start_pos, frag_range, map_q, gc_bias, wi
     """
     min_frag_size = frag_range[0]
     max_frag_size = frag_range[1]
+
+    # Raw fragment counters (pre-GC correction):
+    # - window: fragment center falls within the window (excluding flanks)
+    # - roi: fragment fully contained within the ROI (window + flanks)
+    n_frag_raw_window = 0
+    n_frag_raw_roi = 0
     
     for read in site_reads:
         # Fast filtering - fail early on common exclusions
@@ -92,6 +98,7 @@ def process_fragments_fast(site_reads, start_pos, frag_range, map_q, gc_bias, wi
         
         # Update fragment length histogram if fragment center is in window
         if center_in_window:
+            n_frag_raw_window += 1
             fragment_lengths[frag_len - 1] += bias_factor
         
         # Get nucleosome density profile if applicable
@@ -99,6 +106,7 @@ def process_fragments_fast(site_reads, start_pos, frag_range, map_q, gc_bias, wi
         
         # Vectorized fragment spanning - update depth and nc_signal profiles in place
         if 0 <= frag_start < roi_length and 0 <= frag_end <= roi_length:
+            n_frag_raw_roi += 1
             depth[frag_start:frag_end] += bias_factor
             if nc_density is not None:
                 nc_slice = nc_density[:frag_len] * bias_factor
@@ -111,11 +119,12 @@ def process_fragments_fast(site_reads, start_pos, frag_range, map_q, gc_bias, wi
         end_5_pos = frag_start
         end_3_pos = frag_end - 1
             
-        # Track fragment ends - ensure they're within window bounds
-        if flank_size <= end_5_pos < roi_length - flank_size:
-            fragment_5end_profile[end_5_pos - flank_size] += bias_factor
-        if flank_size <= end_3_pos < roi_length - flank_size:
-            fragment_3end_profile[end_3_pos - flank_size] += bias_factor
+        # Track ends across full ROI
+        if 0 <= end_5_pos < roi_length:
+            fragment_5end_profile[end_5_pos] += bias_factor
+        if 0 <= end_3_pos < roi_length:
+            fragment_3end_profile[end_3_pos] += bias_factor
+    return n_frag_raw_window, n_frag_raw_roi
 
 
 def generate_profile(region, params):
@@ -170,17 +179,18 @@ def generate_profile(region, params):
             
             ### Composite Mode Normalization ###
             In composite-window mode, all signals undergo per-site normalization and weighting before aggregation:
-            1. Per-site flank normalization: Each site's depth and nc_signal are normalized by their respective flanking region means
+            1. Flank normalization (stable): Composite depth and nc_signal are normalized to flanks using a ratio-of-sums estimator
+                    (Σ w_i * signal_i) / (Σ w_i * flank_mean_i), which is robust to noisy per-site flank means at low depth
             2. Fragment-based probability normalization: Fragment length distributions, fragment length profiles, and fragment end 
                profiles are converted to probability distributions (normalized by their respective totals) to ensure contribution 
                is proportional to fragmentation patterns rather than absolute fragment counts
-            3. Weighting: Each site receives weight w = sqrt(total_fragments_at_site) to balance reliability vs. over-dominance
+            3. Weighting: Each site receives weight w = sqrt(n_frag_raw) to balance reliability vs. over-dominance
             4. Weighted aggregation: All normalized signals and probability distributions are multiplied by w and summed
             5. Final normalization: All aggregated signals are divided by total cumulative weight W = Σw
             6. No additional flanking normalization is applied post-aggregation since signals are already per-site normalized
             
             This ensures that sites contribute based on their fragmentation patterns rather than raw fragment counts, 
-            with weighting proportional to sqrt(total_fragments) to balance reliability while preventing over-dominance.
+            with weighting proportional to sqrt(n_frag_raw) to balance reliability while preventing over-dominance.
     """
     bam_path, frag_range, gc_bias, ref_seq_path, map_q, fdict, run_mode, chr_idx, start_idx, stop_idx, site_idx, strand_idx, pos_idx = params
     
@@ -215,7 +225,17 @@ def generate_profile(region, params):
     # assemble depth and fragment profiles for composite sites ---------------------------------------------------------
         site = os.path.basename(region).split('.')[0]  # use the file name as the feature name
         roi_length = window + 2*flank_size  # buffers are added to each end for a smooth FFT at the ROI edges and for flank normalization
-        depth, nc_signal = np.zeros(roi_length, dtype=np.float32), np.zeros(roi_length, dtype=np.float32)
+        # NOTE: In composite mode, per-site flank normalization should not be performed as a mean-of-ratios
+        # (normalize each site by its flank mean, then average) because low-depth sites can have noisy flank
+        # means that explode the normalized profile.
+        #
+        # Instead, use a ratio-of-sums estimator:
+        #   composite_depth(x) = (Σ w_i * depth_i(x)) / (Σ w_i * flank_mean_i)
+        # This stabilizes the composite in ULP settings while preserving full fragment-span coverage.
+        depth_num = np.zeros(roi_length, dtype=np.float32)
+        nc_num = np.zeros(roi_length, dtype=np.float32)
+        depth_den = 0.0
+        nc_den = 0.0
         fragment_length_profile = np.zeros((frag_range[1], roi_length), dtype=np.float32)  # nt-level fragment histogram matrix across full ROI
         # Initialize weighted sum arrays for per-position averaging with NaN masking
         EPC_sum = np.zeros(window_size, dtype=np.float32)  # End coverage per depth sum
@@ -232,11 +252,12 @@ def generate_profile(region, params):
         with open(region.strip(), 'r') as sites_file:
             for entry in sites_file:  # iterate through regions in this particular BED file
                 site_depth, site_nc_signal = np.zeros(roi_length, dtype=np.float32), np.zeros(roi_length, dtype=np.float32)
-                site_5ends, site_3ends = np.zeros(window, dtype=np.float32), np.zeros(window, dtype=np.float32)
+                site_5ends, site_3ends = np.zeros(roi_length, dtype=np.float32), np.zeros(roi_length, dtype=np.float32)
                 site_fragment_lengths = np.zeros(frag_range[1], dtype=np.float32)
                 site_fragment_length_profile = np.zeros((frag_range[1], roi_length), dtype=np.float32)  # Full ROI for FL profiles
                 bed_tokens = entry.strip().split('\t')
-                if not bed_tokens[pos_idx].isdigit(): continue  # header or typo line
+                if pos_idx is not None and not bed_tokens[pos_idx].isdigit():
+                    continue  # header or typo line
                 chrom = str(bed_tokens[chr_idx])
                 # Use position column if available, otherwise compute midpoint
                 if pos_idx is not None:
@@ -276,14 +297,17 @@ def generate_profile(region, params):
                 temp_depth = np.zeros(roi_length, dtype=np.float32)
                 temp_nc_signal = np.zeros(roi_length, dtype=np.float32)
                 temp_fragment_length_profile = np.zeros((frag_range[1], roi_length), dtype=np.float32)  # Full ROI for FL profiles
-                temp_5ends = np.zeros(window, dtype=np.float32)
-                temp_3ends = np.zeros(window, dtype=np.float32)
+                # Track ends across the full ROI in composite mode to avoid window-edge artifacts
+                temp_5ends = np.zeros(roi_length, dtype=np.float32)
+                temp_3ends = np.zeros(roi_length, dtype=np.float32)
                 temp_fragment_lengths = np.zeros(frag_range[1], dtype=np.float32)
                 
                 # Process fragments directly into temporary arrays
-                process_fragments_fast(site_reads, start_pos, frag_range, map_q, gc_bias, window_ref_sequence,
-                                     temp_depth, temp_nc_signal, temp_fragment_lengths, temp_fragment_length_profile,
-                                     temp_5ends, temp_3ends, fdict, roi_length, flank_size)
+                n_frag_raw_window, n_frag_raw_roi = process_fragments_fast(
+                    site_reads, start_pos, frag_range, map_q, gc_bias, window_ref_sequence,
+                    temp_depth, temp_nc_signal, temp_fragment_lengths, temp_fragment_length_profile,
+                    temp_5ends, temp_3ends, fdict, roi_length, flank_size
+                )
                 
                 # Now apply strand-specific processing
                 if len(strands_to_process) == 1:
@@ -346,22 +370,30 @@ def generate_profile(region, params):
                             continue
                 
                 # Per-site normalization and weighting for composite mode
-                # A) Calculate flank mean coverage for both signals
-                site_flank_depth_mean = (np.mean(site_depth[:flank_size]) + np.mean(site_depth[-flank_size:])) / 2
-                site_flank_nc_mean = (np.mean(site_nc_signal[:flank_size]) + np.mean(site_nc_signal[-flank_size:])) / 2
+                # A) Calculate flank mean coverage for both signals.
+                # Exclude the outermost ~max fragment length from the flanks to avoid ROI-boundary truncation bias.
+                edge_exclude = min(int(frag_range[1]), int(flank_size - 1))
+                if edge_exclude < 1:
+                    edge_exclude = 1
+                left_flank_depth = site_depth[edge_exclude:flank_size]
+                right_flank_depth = site_depth[-flank_size:-edge_exclude]
+                left_flank_nc = site_nc_signal[edge_exclude:flank_size]
+                right_flank_nc = site_nc_signal[-flank_size:-edge_exclude]
+                site_flank_depth_mean = (np.mean(left_flank_depth) + np.mean(right_flank_depth)) / 2
+                site_flank_nc_mean = (np.mean(left_flank_nc) + np.mean(right_flank_nc)) / 2
                 # Skip sites with zero flank coverage to avoid division by zero
                 if site_flank_depth_mean <= 0 or site_flank_nc_mean <= 0:
                     skipped_sites.append(entry.strip() + '\t' + site + '\tzero_flank_coverage')
                     continue
-                # B) Normalize both window and flank coverage by their respective flank means
-                site_depth_normalized = site_depth / site_flank_depth_mean
-                site_nc_signal_normalized = site_nc_signal / site_flank_nc_mean
-                # C) Calculate weighting factor based on total fragments used for this site
-                site_total_fragments = np.sum(site_fragment_lengths)
-                if site_total_fragments == 0:
+
+                # C) Calculate weighting factor based on raw fragments (pre-GC correction).
+                # Use ROI-contained fragments (window + flanks) so the weight reflects evidence contributing
+                # to both the numerator (full ROI signal) and the denominator (flank mean estimate).
+                site_total_fragments_raw = int(n_frag_raw_roi)
+                if site_total_fragments_raw == 0:
                     skipped_sites.append(entry.strip() + '\t' + site + '\tzero_fragments')
                     continue
-                site_weight = np.sqrt(site_total_fragments)
+                site_weight = np.sqrt(site_total_fragments_raw)
                 
                 # Accumulate absolute mean depth (GC-corrected) before normalization for composite mean_depth feature
                 site_window_mean_depth = np.mean(site_depth[flank_size:-flank_size])
@@ -370,7 +402,11 @@ def generate_profile(region, params):
                 # D) Normalize fragment-based distributions to probability distributions before weighting
                 # This ensures contribution is proportional to patterns, not absolute fragment counts
                 # Fragment length histogram - convert to probability distribution
-                site_fragment_lengths_prob = site_fragment_lengths / site_total_fragments
+                site_total_fragments_gc = np.sum(site_fragment_lengths)
+                if site_total_fragments_gc > 0:
+                    site_fragment_lengths_prob = site_fragment_lengths / site_total_fragments_gc
+                else:
+                    site_fragment_lengths_prob = np.zeros_like(site_fragment_lengths, dtype=np.float32)
                 
                 # Fragment length profile - normalize each position by total fragments at that position
                 counts = site_fragment_length_profile
@@ -383,16 +419,24 @@ def generate_profile(region, params):
                         0.0  # Positions with no fragments get 0 probability
                     )
                 
-                # Calculate EPC (ends per coverage) and orientation asymmetry ratios at site level
+                # Calculate EPC (ends per depth) and orientation asymmetry at site level.
+                # Compute on the full ROI and flank-normalize using TRUE flanks (outside the window),
+                # then slice to window for aggregation.
                 eps = 1e-6
-                depth_window = site_depth[flank_size:-flank_size]
-                site_total_fragment_ends = site_5ends + site_3ends
-                
-                # Calculate EPC (fragment ends per depth)
-                epc = (site_total_fragment_ends) / (depth_window + eps)
-                
-                # Calculate orientation asymmetry ((5' - 3') / (5' + 3'))
-                asym = (site_5ends - site_3ends) / (site_total_fragment_ends + eps)
+                site_total_fragment_ends_roi = site_5ends + site_3ends
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    epc_roi = site_total_fragment_ends_roi / (site_depth + eps)
+                    asym_roi = (site_5ends - site_3ends) / (site_total_fragment_ends_roi + eps)
+
+                # Flank-normalize EPC using flanks (excluding the window)
+                left_flank_epc = epc_roi[edge_exclude:flank_size]
+                right_flank_epc = epc_roi[-flank_size:-edge_exclude]
+                flank_epc = (np.nanmean(left_flank_epc) + np.nanmean(right_flank_epc)) / 2
+                if (not np.isfinite(flank_epc)) or flank_epc <= 0:
+                    flank_epc = 1.0
+
+                epc = epc_roi[flank_size:-flank_size] / flank_epc
+                asym = asym_roi[flank_size:-flank_size]
                 
                 # Use site weight for per-position weighted averaging
                 w_pos = site_weight
@@ -407,8 +451,11 @@ def generate_profile(region, params):
                 ASYM_w[valid_asym] += w_pos
                 
                 # E) Weight the normalized signals and probability distributions, then accumulate
-                depth += site_depth_normalized * site_weight
-                nc_signal += site_nc_signal_normalized * site_weight
+                # Ratio-of-sums flank normalization
+                depth_num += site_depth * site_weight
+                nc_num += site_nc_signal * site_weight
+                depth_den += site_flank_depth_mean * site_weight
+                nc_den += site_flank_nc_mean * site_weight
                 fragment_lengths += site_fragment_lengths_prob * site_weight  # Weight probability distribution by sqrt(n)
                 fragment_length_profile += site_fragment_length_profile_prob * site_weight
                 # Fragment end coverage and asymmetry already accumulated above with per-position weighting
@@ -416,9 +463,10 @@ def generate_profile(region, params):
                 total_weight += site_weight
         
         # E) Final normalization by cumulative weight W after all sites processed
-        if total_weight > 0:
-            depth /= total_weight
-            nc_signal /= total_weight
+        if total_weight > 0 and depth_den > 0 and nc_den > 0:
+            # Finalize ratio-of-sums normalized composite signals
+            depth = depth_num / depth_den
+            nc_signal = nc_num / nc_den
             fragment_lengths /= total_weight  # Normalize weighted probability distribution
             fragment_length_profile /= total_weight
             # Compute per-position weighted averages for end coverage and asymmetry
@@ -428,16 +476,8 @@ def generate_profile(region, params):
             # Calculate absolute mean depth for composite mode (GC-corrected, weighted average across sites)
             composite_absolute_mean_depth = absolute_mean_depth_sum / total_weight
             
-            # Calculate flanking FEC for normalization in composite mode
-            # Use edge regions of the window for flanking FEC estimate
-            window_edge_size = min(500, window_size // 4)  # Use first/last 500bp or 25% of window
-            left_edge_fec = np.nanmean(fragment_end_coverage_profile[:window_edge_size])
-            right_edge_fec = np.nanmean(fragment_end_coverage_profile[-window_edge_size:])
-            flanking_fec_composite = (left_edge_fec + right_edge_fec) / 2 if (np.isfinite(left_edge_fec) and np.isfinite(right_edge_fec)) else 1.0
-            if not np.isfinite(flanking_fec_composite) or flanking_fec_composite <= 0:
-                flanking_fec_composite = 1.0
-            # Normalize fragment_end_coverage_profile by flanking FEC
-            fragment_end_coverage_profile /= flanking_fec_composite
+            # NOTE: fragment_end_coverage_profile is already flank-normalized per-site using TRUE flanks.
+            # Do not renormalize using window edges here (this introduces window-edge artifacts).
         else:
             # If no sites contributed (shouldn't happen but safety check)
             return (site,) + (np.nan,) * 17 + ([],) + ([],) + (skipped_sites,)
@@ -467,7 +507,7 @@ def generate_profile(region, params):
                 skipped_msg = f"{region.strip()}\tinsufficient_left_flank"
                 return (site,) + (np.nan,) * 17 + ([],) + ([],) + ([skipped_msg],)
             fragment_length_profile = np.zeros((frag_range[1], roi_length), dtype=np.float32)  # Full ROI for FL profiles
-            site_5ends, site_3ends = np.zeros(window, dtype=np.float32), np.zeros(window, dtype=np.float32)
+            site_5ends, site_3ends = np.zeros(roi_length, dtype=np.float32), np.zeros(roi_length, dtype=np.float32)
             fragment_5end_profile, fragment_3end_profile = site_5ends, site_3ends
             
             # Pre-compute fragment length bins for diversity metrics (bin width = 5)
@@ -490,8 +530,7 @@ def generate_profile(region, params):
                 return (site,) + (np.nan,) * 17 + ([],) + ([],) + ([skipped_msg],)
             roi_length = stop_pos - start_pos
             fragment_length_profile = np.zeros((frag_range[1], roi_length), dtype=np.float32)  # Full ROI for FL profiles
-            actual_length = roi_length - 2*flank_size if roi_length > 2*flank_size else roi_length
-            site_5ends, site_3ends = np.zeros(actual_length, dtype=np.float32), np.zeros(actual_length, dtype=np.float32)
+            site_5ends, site_3ends = np.zeros(roi_length, dtype=np.float32), np.zeros(roi_length, dtype=np.float32)
             fragment_5end_profile, fragment_3end_profile = site_5ends, site_3ends
             
             # Pre-compute fragment length bins for diversity metrics (bin width = 5)
@@ -522,9 +561,11 @@ def generate_profile(region, params):
                 skipped_msg = f"{region.strip()}\ttruncated_reference"
                 return (site,) + (np.nan,) * 17 + ([],) + ([],) + ([skipped_msg],)
         # Process fragments directly into profiles - no intermediate lists
-        process_fragments_fast(site_reads, start_pos, frag_range, map_q, gc_bias, window_ref_sequence,
-                             depth, nc_signal, fragment_lengths, fragment_length_profile,
-                             fragment_5end_profile, fragment_3end_profile, fdict, roi_length, flank_size)
+        process_fragments_fast(
+            site_reads, start_pos, frag_range, map_q, gc_bias, window_ref_sequence,
+            depth, nc_signal, fragment_lengths, fragment_length_profile,
+            fragment_5end_profile, fragment_3end_profile, fdict, roi_length, flank_size
+        )
 
         # Create reference sequence profile for non-composite mode
         if not stack:
@@ -570,7 +611,13 @@ def generate_profile(region, params):
     # Pre-normalize nc_signal by flanking mean before FFT (matching composite mode approach)
     # In composite mode, nc_signal is already per-site normalized, so this is skipped
     if not stack:
-        flanking_nc_mean = (np.mean(nc_signal[:flank_size]) + np.mean(nc_signal[-flank_size:])) / 2
+        # Use inner flanks (exclude the outermost ~max fragment length) to avoid ROI-edge truncation bias
+        edge_exclude = min(int(frag_range[1]), int(flank_size - 1))
+        if edge_exclude < 1:
+            edge_exclude = 1
+        left_nc = nc_signal[edge_exclude:flank_size]
+        right_nc = nc_signal[-flank_size:-edge_exclude]
+        flanking_nc_mean = (np.mean(left_nc) + np.mean(right_nc)) / 2
         if flanking_nc_mean > 0:
             nc_signal = nc_signal / flanking_nc_mean
         # If flanking_nc_mean is 0, leave nc_signal as is (will produce NaN in downstream calcs)
@@ -596,7 +643,9 @@ def generate_profile(region, params):
         # Sum fragment_length_profile across all fragment lengths to get total fragments per position
         fragment_counts_per_position = np.sum(fragment_length_profile, axis=0)
         fragment_counts_window = fragment_counts_per_position[flank_size:-flank_size]
-        total_fragment_ends = fragment_5end_profile + fragment_3end_profile
+        fragment_ends_5_window = fragment_5end_profile[flank_size:-flank_size]
+        fragment_ends_3_window = fragment_3end_profile[flank_size:-flank_size]
+        total_fragment_ends = fragment_ends_5_window + fragment_ends_3_window
         
         with np.errstate(divide='ignore', invalid='ignore'):
             fragment_end_profile = np.true_divide(total_fragment_ends, fragment_counts_window)
@@ -607,7 +656,7 @@ def generate_profile(region, params):
 
         # Calculate fragment end orientation asymmetry (also before normalization)
         with np.errstate(divide='ignore', invalid='ignore'):
-            orientation_asymmetry = np.true_divide((fragment_5end_profile - fragment_3end_profile), total_fragment_ends)
+            orientation_asymmetry = np.true_divide((fragment_ends_5_window - fragment_ends_3_window), total_fragment_ends)
             # Only positions with no ends should have NaN
             orientation_asymmetry[total_fragment_ends == 0] = np.nan
 
@@ -618,13 +667,27 @@ def generate_profile(region, params):
         flanking_depth_signal = 1.0
         flanking_fec = 1.0
     else:
-        flanking_depth_signal = (np.mean(depth[:flank_size]) + np.mean(depth[-flank_size:])) / 2
-        # Calculate flanking fragment end coverage for normalization
-        # Calculate mean FEC from the edges of the window (first and last portions)
-        window_edge_size = min(500, len(fragment_end_profile) // 4)  # Use first/last 500bp or 25% of window
-        left_edge_fec = np.nanmean(fragment_end_profile[:window_edge_size])
-        right_edge_fec = np.nanmean(fragment_end_profile[-window_edge_size:])
-        flanking_fec = (left_edge_fec + right_edge_fec) / 2 if (np.isfinite(left_edge_fec) and np.isfinite(right_edge_fec)) else 1.0
+        # Use inner flanks (exclude the outermost ~max fragment length) to avoid ROI-edge truncation bias
+        edge_exclude = min(int(frag_range[1]), int(flank_size - 1))
+        if edge_exclude < 1:
+            edge_exclude = 1
+
+        left_depth = depth[edge_exclude:flank_size]
+        right_depth = depth[-flank_size:-edge_exclude]
+        flanking_depth_signal = (np.mean(left_depth) + np.mean(right_depth)) / 2
+
+        # Calculate flanking fragment end coverage for normalization using TRUE flanks (outside the window),
+        # not the edges of the window. This avoids window-edge artifacts.
+        total_fragment_ends_roi = fragment_5end_profile + fragment_3end_profile
+        with np.errstate(divide='ignore', invalid='ignore'):
+            epc_roi = np.true_divide(total_fragment_ends_roi, fragment_counts_per_position)
+            epc_roi[fragment_counts_per_position == 0] = np.nan
+
+        left_flank_fec = epc_roi[edge_exclude:flank_size]
+        right_flank_fec = epc_roi[-flank_size:-edge_exclude]
+        left_fec = np.nanmean(left_flank_fec)
+        right_fec = np.nanmean(right_flank_fec)
+        flanking_fec = (left_fec + right_fec) / 2 if (np.isfinite(left_fec) and np.isfinite(right_fec)) else 1.0
         if not np.isfinite(flanking_fec) or flanking_fec <= 0:
             flanking_fec = 1.0  # Fallback to no normalization if flanking FEC is invalid
     

@@ -134,6 +134,55 @@ def smooth_data(data, window=75, fill_nans=True, fill_value=0.0):
     return smoothed_data
 
 
+def _bootstrap_mean_ci_by_position(sample_data, loc_name, n_boot=1000, ci=0.95, seed=0, chunk_size=200):
+    """Compute a bootstrap CI of the mean profile at each position.
+
+    Returns:
+        x_vals (list[float|int]), means (list[float]), ci_lower (list[float]), ci_upper (list[float])
+
+    Notes:
+        - Bootstraps across samples within a group.
+        - Handles missing values by using NaN-aware means/percentiles.
+        - Uses chunked bootstrapping to control memory usage.
+    """
+    if sample_data.empty:
+        return [], [], [], []
+
+    # Wide matrix: rows = samples, cols = positions
+    wide = sample_data.pivot(index='sample', columns=loc_name, values='value').sort_index(axis=1)
+    x_vals = wide.columns.to_numpy()
+    mat = wide.to_numpy(dtype=np.float32)
+    n_samples = mat.shape[0]
+
+    means = np.nanmean(mat, axis=0)
+    if n_samples <= 1:
+        # With one sample, CI collapses to the mean.
+        return x_vals.tolist(), means.tolist(), means.tolist(), means.tolist()
+
+    alpha = 1.0 - ci
+    q_lo = 100.0 * (alpha / 2.0)
+    q_hi = 100.0 * (1.0 - alpha / 2.0)
+
+    rng = np.random.default_rng(seed)
+    boot_means_accum = []
+
+    remaining = int(n_boot)
+    while remaining > 0:
+        b = min(int(chunk_size), remaining)
+        idx = rng.integers(0, n_samples, size=(b, n_samples))
+        # mat[idx] => (b, n_samples, n_pos)
+        with np.errstate(all='ignore'):
+            boot_means = np.nanmean(mat[idx, :], axis=1)  # (b, n_pos)
+        boot_means_accum.append(boot_means)
+        remaining -= b
+
+    boot_means_all = np.concatenate(boot_means_accum, axis=0)
+    ci_lower = np.nanpercentile(boot_means_all, q_lo, axis=0)
+    ci_upper = np.nanpercentile(boot_means_all, q_hi, axis=0)
+
+    return x_vals.tolist(), means.tolist(), ci_lower.tolist(), ci_upper.tolist()
+
+
 # Nucleotide variation function removed - not applicable without nucleotide frequency data
 
 
@@ -239,31 +288,20 @@ def plot_profiles(name, data, region, fragmentation_data, samples, palette=None,
             color = palette.get(sample_group) if palette else None
             
             if categories is not None:
-                # When categories are used, plot 95% CI band instead of individual lines
-                # Group by location and calculate mean and CI
-                grouped = sample_data.groupby(loc_name)['value']
-                x_vals = sorted(sample_data[loc_name].unique())
-                means = [grouped.get_group(x).mean() if x in grouped.groups else np.nan for x in x_vals]
-                stds = [grouped.get_group(x).std() if x in grouped.groups else np.nan for x in x_vals]
-                counts = [len(grouped.get_group(x)) if x in grouped.groups else 0 for x in x_vals]
-                
-                # Calculate 95% CI
-                import scipy.stats as stats
-                ci_lower = []
-                ci_upper = []
-                for mean, std, n in zip(means, stds, counts):
-                    if n > 1 and not np.isnan(std):
-                        sem = std / np.sqrt(n)
-                        ci = stats.t.interval(0.95, n-1, loc=mean, scale=sem)
-                        ci_lower.append(ci[0])
-                        ci_upper.append(ci[1])
-                    else:
-                        ci_lower.append(mean)
-                        ci_upper.append(mean)
+                # When categories are used, plot a bootstrap 95% CI of the mean profile at each position.
+                x_vals, means, ci_lower, ci_upper = _bootstrap_mean_ci_by_position(
+                    sample_data=sample_data,
+                    loc_name=loc_name,
+                    n_boot=1000,
+                    ci=0.95,
+                    seed=0,
+                    chunk_size=200,
+                )
                 
                 # Plot mean line and CI band
-                ax.plot(x_vals, means, label=sample_group, alpha=0.8, color=color, linewidth=2)
-                ax.fill_between(x_vals, ci_lower, ci_upper, alpha=0.2, color=color)
+                line = ax.plot(x_vals, means, label=sample_group, alpha=0.8, color=color, linewidth=2)[0]
+                band_color = color if color is not None else line.get_color()
+                ax.fill_between(x_vals, ci_lower, ci_upper, alpha=0.2, color=band_color)
             else:
                 # Individual sample plotting (original behavior)
                 ax.plot(sample_data[loc_name], sample_data['value'], 
@@ -300,30 +338,20 @@ def plot_profiles(name, data, region, fragmentation_data, samples, palette=None,
             color = palette.get(sample_group) if palette else None
             
             if categories is not None:
-                # When categories are used, plot 95% CI band instead of individual lines
-                # Group by location and calculate mean and CI
-                grouped = sample_data.groupby(loc_name)['value']
-                x_vals = sorted(sample_data[loc_name].unique())
-                means = [grouped.get_group(x).mean() if x in grouped.groups else np.nan for x in x_vals]
-                stds = [grouped.get_group(x).std() if x in grouped.groups else np.nan for x in x_vals]
-                counts = [len(grouped.get_group(x)) if x in grouped.groups else 0 for x in x_vals]
-                
-                # Calculate 95% CI using scipy.stats (already imported above)
-                ci_lower = []
-                ci_upper = []
-                for mean, std, n in zip(means, stds, counts):
-                    if n > 1 and not np.isnan(std):
-                        sem = std / np.sqrt(n)
-                        ci = stats.t.interval(0.95, n-1, loc=mean, scale=sem)
-                        ci_lower.append(ci[0])
-                        ci_upper.append(ci[1])
-                    else:
-                        ci_lower.append(mean)
-                        ci_upper.append(mean)
+                # When categories are used, plot a bootstrap 95% CI of the mean profile at each position.
+                x_vals, means, ci_lower, ci_upper = _bootstrap_mean_ci_by_position(
+                    sample_data=sample_data,
+                    loc_name=loc_name,
+                    n_boot=1000,
+                    ci=0.95,
+                    seed=0,
+                    chunk_size=200,
+                )
                 
                 # Plot mean line and CI band
-                ax.plot(x_vals, means, label=sample_group, alpha=0.8, color=color, linewidth=2)
-                ax.fill_between(x_vals, ci_lower, ci_upper, alpha=0.2, color=color)
+                line = ax.plot(x_vals, means, label=sample_group, alpha=0.8, color=color, linewidth=2)[0]
+                band_color = color if color is not None else line.get_color()
+                ax.fill_between(x_vals, ci_lower, ci_upper, alpha=0.2, color=band_color)
             else:
                 # Individual sample plotting (original behavior)
                 ax.plot(sample_data[loc_name], sample_data['value'], 
