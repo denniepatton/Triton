@@ -311,17 +311,24 @@ If you wish to regenerate `NCDict.pkl` with your own site lists or samples, see 
 
 In composite-window mode, signals undergo the following normalization:
 
-1. **Stable flank normalization (depth + nc_signal)**: Composite depth and nc_signal are flank-normalized using a ratio-of-sums estimator. For sites (i) with weight (w_i), bp-resolution signal (s_i(x)), and scalar flank mean (\mu_i), the composite is:
-   $$
-   S(x) ;=; \frac{\sum_i w_i,s_i(x)}{\sum_i w_i,\mu_i}
-   $$
-   (computed separately for depth and nc_signal), which is robust to noisy per-site flank means at low depth.
-2. **Fragment-based probability normalization**: Fragment length distributions and fragment length profiles are converted to probability distributions (normalized by totals) so contribution is proportional to fragmentation patterns rather than absolute fragment counts.
-3. **Weighting**: Each site receives weight (w = \sqrt{n_{\mathrm{frag}}}) to balance reliability vs. over-dominance.
-4. **Weighted aggregation**: Probability-distribution tracks are multiplied by (w) and summed across sites.
-5. **Final normalization**: Probability-distribution tracks are divided by total cumulative weight (W = \sum_i w_i). No additional post-aggregation flank normalization is applied for depth/nc_signal since they are already normalized by the ratio-of-sums estimator above.
+1. **Stable flank normalization (depth + nc_signal)**: Composite depth and nc_signal are flank-normalized using a ratio-of-sums estimator. For sites \(i\) with weight \(w_i\), bp-resolution signal \(s_i(x)\), and scalar flank mean \(\mu_i\), the composite is:
 
-This ensures sites contribute based on fragmentation patterns rather than raw counts, with weighting proportional to (\sqrt{n_{\mathrm{frag}}}) to prevent high-depth sites from dominating the composite signal.
+   $$
+   S(x) = \frac{\sum_i w_i\,s_i(x)}{\sum_i w_i\,\mu_i}.
+   $$
+
+   This is computed separately for depth and nc_signal, and is robust to noisy per-site flank means at low depth.
+
+2. **Fragment-based probability normalization**: Fragment length distributions and fragment length profiles are converted to probability distributions (normalized by totals) so contribution is proportional to fragmentation patterns rather than absolute fragment counts.
+
+3. **Weighting**: Each site receives weight \(w = \sqrt{n_{\mathrm{frag}}}\) to balance reliability vs. over-dominance.
+
+4. **Weighted aggregation**: Probability-distribution tracks are multiplied by \(w\) and summed across sites.
+
+5. **Final normalization**: Probability-distribution tracks are divided by total cumulative weight \(W = \sum_i w_i\). No additional post-aggregation flank normalization is applied for depth/nc_signal since they are already normalized by the ratio-of-sums estimator above.
+
+
+This ensures sites contribute based on fragmentation patterns rather than raw counts, with weighting proportional to \(\sqrt{n_{\mathrm{frag}}}) to prevent high-depth sites from dominating the composite signal.
 
 ### To Run as a Snakemake
 
