@@ -47,6 +47,7 @@ def process_fragments_fast(site_reads, start_pos, frag_range, map_q, gc_bias, wi
     """
     min_frag_size = frag_range[0]
     max_frag_size = frag_range[1]
+    has_gc_bias = gc_bias is not None
 
     # Raw fragment counters (pre-GC correction):
     # - window: fragment center falls within the window (excluding flanks)
@@ -79,20 +80,23 @@ def process_fragments_fast(site_reads, start_pos, frag_range, map_q, gc_bias, wi
         if frag_start < 0 or frag_end > len(window_ref_sequence):
             continue
             
-        # Calculate GC content using IUPAC translate
-        fragment_seq = window_ref_sequence[frag_start:frag_end].translate(iupac_trans)
-        fragment_gc_content = int((np.array(list(fragment_seq), dtype=int).sum() / 6).round())
-        
-        # Look up bias factor
-        try:
-            fragment_bias = gc_bias[frag_len][fragment_gc_content]
-            if not (fragment_bias > 0):  # Skip NaN or non-positive bias
+        # GC bias correction
+        if has_gc_bias:
+            # Calculate GC content using IUPAC translate
+            fragment_seq = window_ref_sequence[frag_start:frag_end].translate(iupac_trans)
+            fragment_gc_content = int((np.array(list(fragment_seq), dtype=int).sum() / 6).round())
+            # Look up bias factor
+            try:
+                fragment_bias = gc_bias[frag_len][fragment_gc_content]
+                if not (fragment_bias > 0):  # Skip NaN or non-positive bias
+                    continue
+            except (KeyError, IndexError):
                 continue
-        except (KeyError, IndexError):
-            continue
-            
-        # Calculate bias factor and fragment center position  
-        bias_factor = 1.0 / fragment_bias
+            bias_factor = 1.0 / fragment_bias
+        else:
+            bias_factor = 1.0
+
+        # Calculate fragment center position
         center_pos = frag_start + frag_len // 2
         center_in_window = flank_size <= center_pos <= roi_length - (flank_size + 1)
         
@@ -888,7 +892,7 @@ def main():
     parser = argparse.ArgumentParser(description='\n### Triton.py ### main Triton pipeline')
     parser.add_argument('-n', '--sample_name', help='sample identifier', required=True)
     parser.add_argument('-i', '--input', help='input BAM file', required=True)
-    parser.add_argument('-b', '--bias', help='input-matched GC bias file (Griffin formatted)', required=True)
+    parser.add_argument('-b', '--bias', help='input-matched GC bias file (Griffin formatted; optional)', required=False, default=None)
     parser.add_argument('-a', '--annotation', help='regions of interest as a BED or list of BEDs', required=True)
     parser.add_argument('-g', '--reference_genome', help='reference genome (.fa)', required=True)
     parser.add_argument('-r', '--results_dir', help='directory for results', required=True)
@@ -920,7 +924,11 @@ def main():
           f'\tfragment re-weighting dictionary = {dict_path}\n')
     sys.stdout.flush()
 
-    gc_bias = get_gc_bias_dict(bias_path)
+    if bias_path is not None:
+        gc_bias = get_gc_bias_dict(bias_path)
+    else:
+        print('WARNING: No GC bias file provided. Running without GC bias correction (all bias factors set to 1).')
+        gc_bias = None
     sites = [region for region in open(sites_path, 'r')]
     frag_dict = pickle.load(open(dict_path, 'rb'))
     if run_mode in ['region', 'window']:

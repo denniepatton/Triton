@@ -1,10 +1,10 @@
 samples:
   SAMPLE_1:
     bam: /path/to/your/bams/SAMPLE_1.bam
-    GC_bias: /path/to/your/biases/SAMPLE_1.GC_bias.txt
+    GC_bias: /path/to/your/biases/SAMPLE_1.GC_bias.txt  # optional
   SAMPLE_2:
     bam: /path/to/your/bams/SAMPLE_2.bam
-    GC_bias: /path/to/your/biases/SAMPLE_2.GC_bias.txt
+    GC_bias: /path/to/your/biases/SAMPLE_2.GC_bias.txt  # optional
   SAMPLE_3:
     bam: /path/to/your/bams/SAMPLE_2.bam
-    GC_bias: /path/to/your/biases/SAMPLE_2.GC_bias.txt
+    # GC_bias omitted — Triton will run without GC correction for this sample

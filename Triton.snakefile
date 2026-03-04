@@ -22,7 +22,6 @@ rule all:
 rule triton_main:
     input:
         bam_path = lambda wildcards: config["samples"][wildcards.samples]['bam'],
-        bias_path = lambda wildcards: config["samples"][wildcards.samples]['GC_bias']
     output:
         fm_file = (config['results_dir']+"/{samples}/{samples}_TritonFeatures.tsv"),
         signals_file = (config['results_dir']+"/{samples}/{samples}_TritonSignalProfiles.npz"),
@@ -36,12 +35,13 @@ rule triton_main:
         size_range=config['size_range'],
         cpus = config['triton_main']['ncpus'],
         run_mode = config['run_mode'],
+        bias_flag = lambda wildcards: "--bias " + config["samples"][wildcards.samples]['GC_bias'] if 'GC_bias' in config["samples"][wildcards.samples] else "",
     shell:
         """
         python Triton/Triton.py \
             --sample_name {wildcards.samples} \
             --input {input.bam_path} \
-            --bias {input.bias_path} \
+            {params.bias_flag} \
             --annotation {params.annotation} \
             --reference_genome {params.reference_genome} \
             --results_dir {params.results_dir} \

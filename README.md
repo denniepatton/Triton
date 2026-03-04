@@ -27,7 +27,7 @@ As a cell-free DNA (cfDNA) processing pipeline, Triton conducts fragmentomic and
 
 ## Description
 
-Triton conducts bp-resolution profile analyses for cfDNA samples in BAM or CRAM format, given a list of individual regions of interest (BED file containing, for example, promoter regions or gene bodies) or a list of composite regions of interest sharing a common center (list of BED files each containing, for example, binding locations for a single transcription factor). All fragments in each region/composite region are used to find the fragment size distribution, coverage, and probability of a nucleosome center at each point. GC bias correction files from Griffin† are used for GC correction by default, though alternative methods are supported. Finally, Fast Fourier Transforms are used to isolate well-phased nucleosome-originating signal, from which nucleosome positioning features are drawn.
+Triton conducts bp-resolution profile analyses for cfDNA samples in BAM or CRAM format, given a list of individual regions of interest (BED file containing, for example, promoter regions or gene bodies) or a list of composite regions of interest sharing a common center (list of BED files each containing, for example, binding locations for a single transcription factor). All fragments in each region/composite region are used to find the fragment size distribution, coverage, and probability of a nucleosome center at each point. GC bias correction files from Griffin† are used for GC correction when provided (recommended), though GC correction can be omitted entirely if bias files are unavailable. Finally, Fast Fourier Transforms are used to isolate well-phased nucleosome-originating signal, from which nucleosome positioning features are drawn.
 
 Outputs may be used either as an endpoint in cfDNA data analysis by outputting ready-to-use features from a given list of regions or composite regions, or as a processing step for further feature extraction from output profiles. Features reported directly from Triton can be used in traditional machine learning approaches, or specific profiles can be plotted with accompanying scripts for qualitative analysis. Signal profiles may also be used in signal-based analyses or in deep learning frameworks (e.g., CNNs).
 
@@ -210,7 +210,7 @@ If you use Triton in your work, please cite the paper above (see [Citing Triton]
 ```
 -n, --sample_name               : sample identifier (string, required)
 -i, --input                     : input .bam file (path, required)
--b, --bias                      : input-matched .GC_bias file (path, e.g., from Griffin†, required)
+-b, --bias                      : input-matched .GC_bias file (path, e.g., from Griffin†, optional — omit to run without GC correction)
 -a, --annotation                : regions of interest as a BED file OR text file containing a list of BED file paths (required)
 -g, --reference_genome          : reference genome .fa file (path, required)
 -r, --results_dir               : directory for output (path, required)
@@ -235,6 +235,8 @@ length   num_GC   smoothed_GC_bias
 ```
 
 with all combinations of fragment length / GC content for a given sample and an associated bias.
+
+Supplying a GC bias file is **optional**. If omitted, Triton will run without GC bias correction (all bias factors default to 1). A warning will be printed to stdout. While GC correction is recommended for quantitative analyses, omitting it can be useful for quick exploratory runs or when bias files are unavailable.
 
 **annotation**
 
@@ -312,9 +314,9 @@ If you wish to regenerate `NCDict.pkl` with your own site lists or samples, see 
 In composite-window mode, signals undergo the following normalization:
 
 1. **Stable flank normalization (depth + nc_signal)**: Composite depth and nc_signal are flank-normalized using a ratio-of-sums estimator. For sites $i$ with weight $w_i$, bp-resolution signal $s_i(x)$, and scalar flank mean $\mu_i$, the composite is:
-   
+
    $S(x) = \frac{\sum_i w_i\,s_i(x)}{\sum_i w_i\,\mu_i}.$
-   
+
    This is computed separately for depth and nc_signal, and is robust to noisy per-site flank means at low depth.
 
 2. **Fragment-based probability normalization**: Fragment length distributions and fragment length profiles are converted to probability distributions (normalized by totals) so contribution is proportional to fragmentation patterns rather than absolute fragment counts.
@@ -334,7 +336,7 @@ This ensures sites contribute based on fragmentation patterns rather than raw co
 
    * `config/config.yaml` – specify inputs (annotation, cluster script path, etc.)
    * `config/cluster_slurm.yaml` – cluster resource configs
-   * `config/samples.yaml` – sample info; see `example_samples.yaml`
+   * `config/samples.yaml` – sample info; see `example_samples.yaml` (the `GC_bias` field is optional per sample)
 2. If on a Fred Hutch server, load the Python modules indicated in the header of `Triton.snakefile`
    Otherwise, set up a local environment following [Requirements and Installation](#requirements-and-installation)
 3. Run the following snakemake command:
