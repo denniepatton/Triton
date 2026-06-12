@@ -17,7 +17,7 @@ cluster_slurm: config/cluster_slurm.yaml # used to get info about available CPUs
 # parameters #
 ##############
 
-reference_genome: /fh/fast/ha_g/grp/reference/GRCh38/Broad_bundle_hg38/v0/Homo_sapiens_assembly38.fasta # use hg38
+reference_genome: /path/to/your/reference/Homo_sapiens_assembly38.fasta # use hg38
 results_dir: results # where your results will go
 map_quality: 20 # minimum mapping quality to keep a read
 size_range: 15 500 # range of fragment lengths to be used for analysis

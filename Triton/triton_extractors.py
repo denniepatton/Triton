@@ -24,8 +24,36 @@ import argparse
 import numpy as np
 import pandas as pd
 
-cols = ['depth', 'frag-ends', 'phased-signal', 'frag-mean', 'frag-stdev', 'frag-median',
-        'frag-mad', 'frag-ratio', 'frag-diversity', 'frag-entropy',  'peaks']
+DEFAULT_COLS = [
+    'raw-depth',
+    'frag-ends',
+    'frag-orient',
+    'pn-signal',
+    'fl-ratio',
+    'fl-entropy',
+    'fl-gini-simpson',
+    'peaks',
+    'A',
+    'C',
+    'G',
+    'T',
+]
+
+
+def cols_for_width(n_cols):
+    if n_cols <= len(DEFAULT_COLS):
+        return DEFAULT_COLS[:n_cols]
+    extra = [f'profile_{i+1}' for i in range(len(DEFAULT_COLS), n_cols)]
+    return DEFAULT_COLS + extra
+
+
+def sample_from_npz_path(path):
+    base = os.path.basename(path)
+    suffixes = ['_TritonSignalProfiles.npz', '_TritonProfiles.npz']
+    for suffix in suffixes:
+        if base.endswith(suffix):
+            return base[:-len(suffix)]
+    return os.path.splitext(base)[0]
 
 
 def extract_features(data, site, features):
@@ -45,11 +73,10 @@ def extract_features(data, site, features):
         feature_vals = []
         for feature in features:
             if feature == 'zero-depth':
-                print(df[df['loc'].isin(zero_range)])
-                zero_depth = np.nanmean(df[df['loc'].isin(zero_range)]['phased-signal'].values)
+                zero_depth = np.nanmean(df[df['loc'].isin(zero_range)]['pn-signal'].values)
                 feature_vals.append(zero_depth)
             elif feature == 'zero-heterogeneity':
-                zero_het = np.nanmean(df[df['loc'].isin(zero_range)]['frag-hetero'].values)
+                zero_het = np.nanmean(df[df['loc'].isin(zero_range)]['fl-entropy'].values)
                 feature_vals.append(zero_het)
             elif feature == 'dip-width':
                 if 2.0 in df['peaks'].values:
@@ -79,7 +106,7 @@ def normalize_data(data):
 # noinspection PyUnresolvedReferences
 def main():
     parser = argparse.ArgumentParser(description='\n### triton_extractors.py ### extracts additional features')
-    parser.add_argument('-i', '--input', help='one or more TritonProfiles.npz files; wildcards (e.g. '
+    parser.add_argument('-i', '--input', help='one or more TritonSignalProfiles.npz files; wildcards (e.g. '
                                               'results/*.npz) are OK.', nargs='*', required=True)
     parser.add_argument('-s', '--sites', help='file containing a list (row-wise) of sites to restrict to. This file'
                                               ' should NOT contain a header. DEFAULT = None (use all sites).',
@@ -119,13 +146,21 @@ def main():
     #             print('Extracting features for site: ' + site)
     #             out_dfs.append(extract_features(df, site, new_feats))
     # else:  # multiple samples:
-    samples = [os.path.basename(path).split('_TritonProfiles.npz')[0] for path in input_path]
+    samples = [sample_from_npz_path(path) for path in input_path]
     tests_data = [np.load(path) for path in input_path]
     for site in tests_data[0].files:
         if sites_path is None or site in sites:
-            dfs = [pd.DataFrame(test_data[site], columns=cols)
-                   for test_data in tests_data if len(test_data[site].shape) == 2]
-            for tdf, sample in zip(dfs, samples):
+            dfs = []
+            used_samples = []
+            for test_data, sample in zip(tests_data, samples):
+                arr = test_data[site]
+                if len(arr.shape) != 2:
+                    continue
+                cols = cols_for_width(arr.shape[1])
+                dfs.append(pd.DataFrame(arr, columns=cols))
+                used_samples.append(sample)
+
+            for tdf, sample in zip(dfs, used_samples):
                 tdf['loc'] = np.arange(len(tdf))
                 tdf['sample'] = sample
                 # for col in norm_cols:
@@ -135,6 +170,10 @@ def main():
             df = pd.concat(dfs)
             print('Extracting features for site: ' + site)
             out_dfs.append(extract_features(df, site, new_feats))
+
+    if len(out_dfs) == 0:
+        print('No extractable sites found in passed files.')
+        return
 
     print('Merging and saving results . . .')
     df_final = pd.concat(out_dfs).set_index('sample')

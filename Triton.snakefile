@@ -35,7 +35,7 @@ rule triton_main:
         size_range=config['size_range'],
         cpus = config['triton_main']['ncpus'],
         run_mode = config['run_mode'],
-        bias_flag = lambda wildcards: "--bias " + config["samples"][wildcards.samples]['GC_bias'] if 'GC_bias' in config["samples"][wildcards.samples] else "",
+        bias_flag = lambda wildcards: "--bias {}".format(config["samples"][wildcards.samples]["GC_bias"]) if config["samples"][wildcards.samples].get("GC_bias") else "",
     shell:
         """
         python Triton/Triton.py \

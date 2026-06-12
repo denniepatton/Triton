@@ -249,6 +249,9 @@ Example canonical annotation files are provided in `config/site_lists`:
 * `MANE.GRCh38.v1.3_TranscriptBodies.bed` for region mode (full gene bodies)
 * `MANE.GRCh38.v1.3_TSS.bed` for window mode (promoter regions)
 * `GTRD_F1000.tsv` or `GTRD_F10000.tsv` for composite-window mode (pointing to directories of BEDs for TFBSs), which contain 1,000 and 10,000 sites, respectively, for each TFBS.
+* `PC-ATAC.tsv` for composite-window mode using phenotype-specific open-chromatin lists (AD/NE) derived from the CD-22-0692 framework.
+
+Note: `PC-ATAC.tsv` currently includes the two paper-derived base lists that are shipped in the repository. Optional derived filtered AD/NE variants used by Keraon are documented in `config/site_lists/README.txt'.
 
 **reference_genome**
 The `.fa` file must match the build used to align your samples.
@@ -435,6 +438,16 @@ python3 Triton/Triton.py \
 ## Requirements and Installation
 
 Triton requires standard Python libraries (e.g. NumPy, SciPy, pysam) and is compatible with Python 3.7+ (tested up to Python 3.13).
+
+The provided `environment.yml` is intentionally pinned for production compatibility with the tested cluster stack:
+
+* Python `3.7.4`
+* Snakemake `5.19.2`
+
+These versions are compatible with the Fred Hutch module combination shown above:
+
+* `snakemake/5.19.2-foss-2019b-Python-3.7.4`
+* `Python/3.7.4-foss-2019b-fh1`
 
 ### Micromamba/Conda Environment
 

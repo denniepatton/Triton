@@ -924,7 +924,27 @@ def main():
           f'\tfragment re-weighting dictionary = {dict_path}\n')
     sys.stdout.flush()
 
+    # Basic input validation for clearer failures up front.
+    if not os.path.exists(bam_path):
+        raise FileNotFoundError(f'Input alignment file not found: {bam_path}')
+    if not os.path.exists(ref_seq_path):
+        raise FileNotFoundError(f'Reference genome FASTA not found: {ref_seq_path}')
+    if not os.path.exists(sites_path):
+        raise FileNotFoundError(f'Annotation file not found: {sites_path}')
+    if not os.path.exists(dict_path):
+        raise FileNotFoundError(f'Fragment center dictionary not found: {dict_path}')
+    if map_q < 0:
+        raise ValueError(f'Invalid map_quality ({map_q}): must be >= 0')
+    if len(size_range) != 2 or size_range[0] < 1 or size_range[1] < size_range[0]:
+        raise ValueError(
+            f'Invalid size_range ({size_range}): expected two integers with 1 <= min <= max'
+        )
+    if cpus is not None and cpus < 1:
+        raise ValueError(f'Invalid cpus ({cpus}): must be >= 1')
+
     if bias_path is not None:
+        if not os.path.exists(bias_path):
+            raise FileNotFoundError(f'GC bias file not found: {bias_path}')
         gc_bias = get_gc_bias_dict(bias_path)
     else:
         print('WARNING: No GC bias file provided. Running without GC bias correction (all bias factors set to 1).')
